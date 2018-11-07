@@ -1,5 +1,6 @@
 package com.stillcoolme.spark.utils;
 
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
@@ -15,6 +16,15 @@ public class DateUtils {
 			new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	public static final SimpleDateFormat DATE_FORMAT = 
 			new SimpleDateFormat("yyyy-MM-dd");
+
+	public static Date parseDate(String time){
+		try {
+			return TIME_FORMAT.parse(time);
+		} catch (ParseException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
 
 	public static String formatDateTime(Date date){
 		return TIME_FORMAT.format(date);

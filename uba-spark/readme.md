@@ -199,8 +199,10 @@ JSON是起到了什么作用呢？我们在task表中的task_param字段，会�
 
 比如说，要获取JSON中某个字段的值。我们这里使用的是阿里的fastjson工具包。使用这个工具包，可以方便的将字符串类型的JSON数据，转换为一个JSONObject对象，然后通过其中的getX()方法，获取指定的字段的值。
 
+## session聚合
+session聚合统计（统计出访问时长和访问步长，各个区间的session数量占总session数量的比例）
 
-### 5.4 按条件筛选session
+### 6.1 按条件筛选session
 从数据库获取task参数，然后去筛选session。
 要进行session粒度的数据聚合。
 首先要从user_visit_action表中，查询出来指定日期范围内的行为数据（过滤）。
@@ -208,7 +210,8 @@ JSON是起到了什么作用呢？我们在task表中的task_param字段，会�
 1. 第一步：aggregateBySession() 
 先将行为数据，按照session_id进行groupByKey分组，此时的数据的粒度就是session粒度了 （通过mapToPair ！！）
 然后，可以将session粒度的数据，与用户信息数据，进行join。
-就可以获取到session粒度的数据，同时数据里面还包含了session对应的user 和 session搜索行为的信息
+就可以获取到session粒度的数据，同时数据里面还包含了session对应的user 和 session搜索行为的信息。
+
 2. 第二步：
 ```
 JavaRDD<Row> actionRDD = getActionRDDByDateRange(taskParam);
@@ -217,8 +220,116 @@ JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD
 // 到这里为止，获取的数据是<sessionid,(sessionid,searchKeywords,clickCategoryIds,age,professional,city,sex)> 
 ```
 
-aggregateBySession() 的具体实现里面 三次用到了 mapToPair 算子！！！用来调整数据结构，形成Tuple2形式的 key,value
+3. 第三步：
+针对session粒度的聚合数据，按照平台用户指定的筛选参数进行数据过滤。
+通过filter算子，筛选出符合平台用户的筛选参数的 sessionid, AggrInfo 数据。
+```
+JavaPairRDD<String, String> filteredSessionid2AggrInfo =
+                filterSession(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
+```
+注意访问外面的任务参数taskParam，要设为final（因为匿名内部类（算子函数），访问外部对象，是要给外部对象使用final修饰的）。
 
+
+aggregateBySession() 的具体实现里面 三次用到了 mapToPair 算子！！！
+用来调整数据结构、分组，形成Tuple2形式的 key,value。
+一般的需求基本都要用到这个套路进行数据分组。。。
+
+
+### 6.2 session聚合统计-- 自定义accumulator
+需求：统计6.1过滤出来的session中，访问时长在0s~3s的session的数量，占总session数量的比例。
+
+**原生Accumulator**
+如果每种步长的都用一个Accumulator
+Accumulator 1s_3s = sc.accumulator(0L);
+就要十几个Accumulator。
+
+对过滤以后的session，调用foreach也可以，遍历所有session；
+计算每个session的访问时长和访问步长；
+访问时长：把session的最后一个action的时间，减去第一个action的时间
+访问步长：session的action数量
+计算出访问时长和访问步长以后，根据对应的区间，找到对应的Accumulator，然后1s_3s.add(1L)
+同时每遍历一个session，就可以给总session数量对应的Accumulator，加1
+最后用各个区间的session数量，除以总session数量，就可以计算出各个区间的占比了
+
+这种传统的实现方式，有什么不好？？？这样Accumulator太多了，不便于维护。
+
+**自定义Accumulator**
+我们自己自定义一个Accumulator，实现较为复杂的复杂分布式计算逻辑，用一个Accumulator维护了所有范围区间的数量的统计逻辑。更方便进行中间状态的维护，而且不用担心并发和锁的问题。
+```
+Spark2.x的是AccumulatorV2，要实现多个方法。其中add方法
+/**
+ * 在连接串counter中，找到key对应的value，累加1，然后再更新回counter里面去。
+ * 例如传入 1s_3s， 则将 counter中的 1s_3s=0 累加1变成 1s_3s=1
+ * @param key 范围key
+ */
+@Override
+public void add(String key) {
+    if(StringUtils.isEmpty(counter)){
+        return;
+    }
+    // 使用StringUtils工具类，从v1中，提取v2对应的值，并累加1
+    String oldValue = StringUtils.getFieldFromConcatString(counter, Constants.REGEX_SPLIT, key);
+    if(oldValue != null){
+        int newValue = Integer.valueOf(oldValue) + 1;
+        String newCounter = StringUtils.setFieldInConcatString(counter, Constants.REGEX_SPLIT, key, String.valueOf(newValue));
+        this.counter = newCounter;
+    }
+}
+```
+
+
+### 6.3 session聚合统计-- 添加计算时长步长的具体逻辑
+在6.1基础上添加中添加 
+1. 计算session访问步长，访问时长。
+2. 在过滤算子计算时使用自定义Accumulator统计访问步长、访问时长。
+
+* 首先注册自定义Accumulator。
+```
+AccumulatorV2<String, String> sessionAggrStatAccumulator = new UserVisitSessionAccumulator();
+sparkSession.sparkContext().register(sessionAggrStatAccumulator, "sessionAggrStatAccumulator");
+```
+* 然后将Accumulator作为 6.1的 filterSession的参数，修改方法名为filterSessionAndAggrStat，过滤并做聚合信息的统计
+```
+JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD =
+                filterSessionAndAggrStat(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
+```
+
+* filterSessionAndAggrStat方法里在filter算子中，在过滤调教最后，取出session中的 visitLength、steplength，进行相应的累加计数。
+```
+long visitLength = Long.valueOf(StringUtils.getFieldFromConcatString(
+        aggrInfo, Constants.REGEX_SPLIT, Constants.FIELD_VISIT_LENGTH));
+long stepLength = Long.valueOf(StringUtils.getFieldFromConcatString(
+        aggrInfo, Constants.REGEX_SPLIT, Constants.FIELD_STEP_LENGTH));
+calculateVisitLength(visitLength);
+calculateStepLength(stepLength);
+sessionAggrStatAccumulator.add(Constants.SESSION_COUNT);
+```
+
+```
+/**
+ * 计算访问时长范围
+ * @param visitLength
+ */
+private void calculateVisitLength(long visitLength) {
+    if (visitLength > 0 && visitLength < 3) {
+        sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_1s_3s);
+    } else if (visitLength >= 4 && visitLength <= 6) {
+        sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_4s_6s);
+    } else if (visitLength >= 7 && visitLength <= 9) {
+    ...
+}
+```
+
+Accumulator这种分布式累加计算的变量是懒加载的，需要action算子触发，而运行了多少次action，这个Accumulator就会多运算几次，结果就会出错，所以一般是在插入mysql前执行一次action。
+计算出来的结果，在J2EE中，是怎么显示的，是用两张柱状图显示。
+
+要遵循开发Spark大型复杂项目的一些经验准则：
+1. 尽量少生成RDD
+2. 尽量少对RDD进行算子操作，尽量在一个算子里面，实现多个需要做的功能
+3. 尽量少对RDD进行shuffle算子操作，比如groupByKey、reduceByKey、sortByKey（map、mapToPair）。shuffle操作，会导致大量的磁盘读写，严重降低性能。有shuffle的算子，和没有shuffle的算子，性能会有很大的差别。有shfufle的算子，很容易导致数据倾斜，一旦数据倾斜，简直就是性能杀手（完整的解决方案）
+4、无论做什么功能，性能第一
+  在传统的J2EE或者.NET后者PHP，软件/系统/网站开发中，我认为是架构和可维护性，可扩展性的重要程度，远远高于了性能，大量的分布式的架构，设计模式，代码的划分，类的划分（高并发网站除外）
+  在大数据项目中，比如MapReduce、Hive、Spark、Storm，我认为性能的重要程度，远远大于一些代码的规范，和设计模式，代码的划分，类的划分；大数据，大数据，最重要的，就是性能。主要就是因为大数据以及大数据项目的特点，决定了，大数据的程序和项目的速度，都比较慢。如果不优先考虑性能的话，会导致一个大数据处理程序运行时间长度数个小时，甚至数十个小时。此时，对于用户体验，简直就是一场灾难。
 
 
 ## 10 遇到的问题
@@ -260,5 +371,12 @@ val rdd = DF.rdd.map(row => val label = row.getAs[Int]("age"))
   def getAs[T](fieldName: String): T = getAs[T](fieldIndex(fieldName))
 ```
 建议:如果null不是你想的数据建议在SQL阶段就将其过滤掉
+
+## 11. 经验套路
+
+### mapToPair形成自定义tuple
+aggregateBySession() 的具体实现里面 三次用到了 mapToPair 算子！！！
+用来调整数据结构、分组，形成Tuple2形式的 key,value。
+一般的需求基本都要用到这个套路进行数据分组。
 
 

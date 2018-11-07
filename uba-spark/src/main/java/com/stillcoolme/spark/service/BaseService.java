@@ -12,7 +12,7 @@ import org.apache.spark.sql.SparkSession;
 /**
  * Created by zhangjianhua on 2018/10/30.
  */
-public abstract class BaseService {
+public abstract class BaseService implements java.io.Serializable{
 
     public static SparkSession sparkSession = null;
     public static JavaSparkContext javaSparkContext = null;

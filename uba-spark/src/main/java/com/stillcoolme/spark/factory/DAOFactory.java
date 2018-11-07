@@ -1,6 +1,8 @@
 package com.stillcoolme.spark.factory;
 
+import com.stillcoolme.spark.dao.ISessionAggrStatDAO;
 import com.stillcoolme.spark.dao.ITaskDAO;
+import com.stillcoolme.spark.dao.impl.SessionAggrStatDAOImpl;
 import com.stillcoolme.spark.dao.impl.TaskDAOImpl;
 
 /**
@@ -16,6 +18,10 @@ public class DAOFactory {
 	 */
 	public static ITaskDAO getTaskDAO() {
 		return new TaskDAOImpl();
+	}
+
+	public static ISessionAggrStatDAO getSessionAggrStatDAO(){
+		return new SessionAggrStatDAOImpl();
 	}
 	
 }
