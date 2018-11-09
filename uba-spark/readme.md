@@ -23,6 +23,8 @@
 !(项目流程图)[https://img2018.cnblogs.com/blog/659358/201810/659358-20181022224756821-1143146095.png]
 
 ## 3. 需求分析
+功能弄清楚了，写代码的时候心里才有底。。。
+
 1、按条件筛选session
 搜索过某些关键词的用户、访问时间在某个时间段内的用户、年龄在某个范围内的用户、职业在某个范围内的用户、所在某个城市的用户，发起的session。找到对应的这些用户的session，也就是我们所说的第一步，按条件筛选session。
 
@@ -116,8 +118,7 @@ CREATE TABLE `session_random_extract` (
   `session_id` varchar(255) DEFAULT NULL,
   `start_time` varchar(50) DEFAULT NULL,
   `end_time` varchar(50) DEFAULT NULL,
-  `search_keywords` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`task_id`)
+  `search_keywords` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8
 ```
 第三个表：top10_category表，存储按点击、下单和支付排序出来的top10品类数据
@@ -199,7 +200,7 @@ JSON是起到了什么作用呢？我们在task表中的task_param字段，会�
 
 比如说，要获取JSON中某个字段的值。我们这里使用的是阿里的fastjson工具包。使用这个工具包，可以方便的将字符串类型的JSON数据，转换为一个JSONObject对象，然后通过其中的getX()方法，获取指定的字段的值。
 
-## session聚合
+## session聚合统计
 session聚合统计（统计出访问时长和访问步长，各个区间的session数量占总session数量的比例）
 
 ### 6.1 按条件筛选session
@@ -251,7 +252,7 @@ Accumulator 1s_3s = sc.accumulator(0L);
 同时每遍历一个session，就可以给总session数量对应的Accumulator，加1
 最后用各个区间的session数量，除以总session数量，就可以计算出各个区间的占比了
 
-这种传统的实现方式，有什么不好？？？这样Accumulator太多了，不便于维护。
+这种传统的实现方式，Accumulator太多了，不便于维护。
 
 **自定义Accumulator**
 我们自己自定义一个Accumulator，实现较为复杂的复杂分布式计算逻辑，用一个Accumulator维护了所有范围区间的数量的统计逻辑。更方便进行中间状态的维护，而且不用担心并发和锁的问题。
@@ -332,6 +333,31 @@ Accumulator这种分布式累加计算的变量是懒加载的，需要action算
   在大数据项目中，比如MapReduce、Hive、Spark、Storm，我认为性能的重要程度，远远大于一些代码的规范，和设计模式，代码的划分，类的划分；大数据，大数据，最重要的，就是性能。主要就是因为大数据以及大数据项目的特点，决定了，大数据的程序和项目的速度，都比较慢。如果不优先考虑性能的话，会导致一个大数据处理程序运行时间长度数个小时，甚至数十个小时。此时，对于用户体验，简直就是一场灾难。
 
 
+## 7 session随机抽取
+每一次执行用户访问session分析模块，要抽取出100个session。
+
+session随机抽取：按每天的每个小时的session数量，占当天session总数的比例，乘以每天要抽取的session数量，计算出每个小时要抽取的session数量；然后呢，在每天每小时的session中，随机抽取出之前计算出来的数量的session。
+
+举例：10000个session，要取100个session；
+0点~1点之间，有2000个session，占总session的比例就是0.2；
+按照比例，0点~1点需要抽取出来的session数量是100 * 0.2 = 20个；
+然后在0~2000之间产生20个随机数作为索引。
+最后，在0点~点的2000个session中，通过上面的20个索引抽取20个session。
+
+具体步骤：
+1. mapToPair得到 time2sessionidRDD 格式： \\<\\yyyy-MM-dd_HH,aggrInfo\\>
+2. time2sessionidRDD通过countByKey，可知每个小时的session数量
+3. 随机插取算法
+4. time2sessionidRDD通过groupByKey，得到time2sessionsRDD，可知每个小时的session Iterable
+5. time2sessionsRDD执行flatMapToPair遍历每小时session，在索引上则抽取。
+6. 再和action数据join，来得到这些被抽取session的详细行为信息。
+
+不足：
+1. 第一个mapToPair返回的应该是Tuple2(dateHour, aggrInfo)比较好，而不是Tuple2(dateHour, sessionId)，可以给以后用。
+2. flatMappair不知道什么鬼。
+3. join也不会了。
+
+
 ## 10 遇到的问题
 
 ### 10.1 读取Long类型的空值报错
@@ -371,6 +397,102 @@ val rdd = DF.rdd.map(row => val label = row.getAs[Int]("age"))
   def getAs[T](fieldName: String): T = getAs[T](fieldIndex(fieldName))
 ```
 建议:如果null不是你想的数据建议在SQL阶段就将其过滤掉
+
+### 10.2 对象无法序列化
+
+一口气写完了以后，一测老是报某个DaoImpl无法序列化。结果revert回去重新一点一点写，发现是其中的一个date没有取对值，结果居然会变成 某个DaoImpl无法序列化，真是不可思议。所以要写一点测一点。。。
+
+
+### 10.3 spark1.x升级到spark2.x以及1.x和2.x的版本兼容
+spark2.x中flatMapToPair的call返回的是Iterator，而不是Iterable接口了。
+spark1.x
+```
+public static JavaRDD<String> workJob(JavaRDD<String> spark1Rdd) {
+        JavaPairRDD<String, Integer> testRdd = spark1Rdd                .flatMapToPair(new PairFlatMapFunction<String, String, Integer>() {
+            @Override            
+            public Iterable<Tuple2<String, Integer>> call(String str)
+                    throws Exception {
+                ArrayList<Tuple2<String, Integer>> list = new ArrayList<>();                
+                return list;
+            }
+        });        
+        return spark1Rdd;
+    }
+```
+
+spark2.x
+```
+public static JavaRDD<String> workJob(JavaRDD<String> spark2Rdd) {
+        JavaPairRDD<String, Integer> testRdd2 = spark2Rdd                .flatMapToPair(new PairFlatMapFunction<String, String, Integer>() {
+            @Override            
+            public Iterator<Tuple2<String, Integer>> call(String str)
+                    throws Exception {
+                ArrayList<Tuple2<String, Integer>> list = new ArrayList<>();                
+                return list.iterator();
+            }
+        });        
+        return spark2Rdd;
+    }
+```
+需要说明的是: 
+上面的返回的rdd就直接用输入的 RDD显然是不合理的! 只是为了用最简洁的方式介绍代码的转换而已!
+
+可以看到区别主要在于
+1. spark 1.x中的Iterable对象 变成了spark2.x中的Iterator对象
+2. 相应的,对于返回值为list的RDD,  spark2.x中要返回list.iterator();
+还是很简单的吧。
+
+问题在于 : 如果你有几个spark程序要运行在不同的环境下，有的现场用1.x,有的现场用2.x
+你需要同时维护两种不同版本的spark，是不是耗时又耗力呢?
+
+这个时候就需要考虑到 spark版本的兼容性,使你的程序能成功的运行在各种集群环境下。通过一个中间的接口来进行适配！！！
+```
+public class MyIterator<T> implements Iterator implements Iterable{
+  private Iterator myIterable;
+
+  public MyIterator(Iterable iterable)
+    {
+        myIterable = iterable.iterator();
+    }
+
+    @Override
+    public boolean hasNext() 
+    {
+        return myIterable.hasNext();
+    }
+
+    @Override
+    public Object next() 
+    {
+        return myIterable.next();
+    }
+
+    @Override
+    public void remove() 
+    {
+        myIterable.remove();
+    }
+
+    @Override
+    public Iterator iterator() 
+    {
+        return myIterable;
+    }
+}
+```
+只需要进行如上设计就可以实现版本的兼容了，那么应该如何应用呢?
+```
+JavaRDD<String> flatMapRDD = lines.flatMap(
+  new FlatMapFunction<String, String>() {
+    @Override
+    public MyIterator<String> call(String s) throws Exception {
+        String[] split = s.split("\\s+");
+        // 这样就可以顺利接收spark1.x的Iterable接口对象了
+        MyIterator myIterator = new MyIterator(Arrays.asList(split));
+        return myIterator;
+    }
+});
+```
 
 ## 11. 经验套路
 

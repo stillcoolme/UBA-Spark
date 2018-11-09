@@ -1,8 +1,12 @@
 package com.stillcoolme.spark.factory;
 
 import com.stillcoolme.spark.dao.ISessionAggrStatDAO;
+import com.stillcoolme.spark.dao.ISessionDetailDAO;
+import com.stillcoolme.spark.dao.ISessionRandomExtractDAO;
 import com.stillcoolme.spark.dao.ITaskDAO;
+import com.stillcoolme.spark.dao.SessionDetailDAOImpl;
 import com.stillcoolme.spark.dao.impl.SessionAggrStatDAOImpl;
+import com.stillcoolme.spark.dao.impl.SessionRandomExtractDAOImpl;
 import com.stillcoolme.spark.dao.impl.TaskDAOImpl;
 
 /**
@@ -23,5 +27,12 @@ public class DAOFactory {
 	public static ISessionAggrStatDAO getSessionAggrStatDAO(){
 		return new SessionAggrStatDAOImpl();
 	}
-	
+
+	public static ISessionRandomExtractDAO getSessionRandomExtractDAO(){
+		return new SessionRandomExtractDAOImpl();
+	}
+
+	public static ISessionDetailDAO getSessionDetailDAO(){
+		return new SessionDetailDAOImpl();
+	}
 }

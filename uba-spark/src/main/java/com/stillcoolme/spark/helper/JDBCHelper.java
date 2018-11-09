@@ -8,8 +8,10 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Created by zhangjianhua on 2018/10/22.
@@ -19,6 +21,9 @@ import java.util.List;
  * 所有这些东西，都需要通过常量来封装和使用
  */
 public class JDBCHelper {
+
+    //使用阻塞队列
+    private LinkedBlockingQueue<Connection> queue=new LinkedBlockingQueue<Connection>();
 
     // 第一步：在静态代码块中，直接加载数据库的驱动
     // 加载驱动，不是直接简单的，使用com.mysql.jdbc.Driver就可以了
@@ -211,61 +216,50 @@ public class JDBCHelper {
     }
 
     /**
-     * 批量执行SQL语句
-     *
-     * 批量执行SQL语句，是JDBC中的一个高级功能
-     * 默认情况下，每次执行一条SQL语句，就会通过网络连接，向MySQL发送一次请求
-     *
-     * 但是，如果在短时间内要执行多条结构完全一模一样的SQL，只是参数不同
-     * 虽然使用PreparedStatement这种方式，可以只编译一次SQL，提高性能，但是，还是对于每次SQL
-     * 都要向MySQL发送一次网络请求
-     *
-     * 可以通过批量执行SQL语句的功能优化这个性能
-     * 一次性通过PreparedStatement发送多条SQL语句，比如100条、1000条，甚至上万条
-     * 执行的时候，也仅仅编译一次就可以
-     * 这种批量执行SQL语句的方式，可以大大提升性能
-     *
+     * 批量执行sql语句
      * @param sql
-     * @param paramsList
-     * @return 每条SQL语句影响的行数
+     * @param params
+     * @return
      */
-    public int[] executeBatch(String sql, List<Object[]> paramsList) {
-        int[] rtn = null;
-        Connection conn = null;
-        PreparedStatement pstmt = null;
+    public int[] excuteBatch(String sql,List<Object[]> params)
+    {
+        Connection connection=null;
+        PreparedStatement statement=null;
+        int[] res=null;
+        try
+        {
+            connection=getConnection();
+            statement=connection.prepareStatement(sql);
+            //1.取消自动提交
+            connection.setAutoCommit(false);
+            //2.设置参数
+            for (Object[] param:
+                    params) {
+                for (int i = 0; i < param.length; i++) {
+                    statement.setObject(i+1,param[i]);
+                }
+                statement.addBatch();
+            }
+            //3.批量执行
+            res=statement.executeBatch();
+            //4.最后一步提交
+            connection.commit();
+            return res;
 
-        try {
-            conn = getConnection();
-
-            // 第一步：使用Connection对象，取消自动提交
-            conn.setAutoCommit(false);
-
-            pstmt = conn.prepareStatement(sql);
-
-            // 第二步：使用PreparedStatement.addBatch()方法加入批量的SQL参数
-            if(paramsList != null && paramsList.size() > 0) {
-                for(Object[] params : paramsList) {
-                    for(int i = 0; i < params.length; i++) {
-                        pstmt.setObject(i + 1, params[i]);
-                    }
-                    pstmt.addBatch();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        finally {
+            if(connection!=null)
+            {
+                try {
+                    queue.put(connection);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
-
-            // 第三步：使用PreparedStatement.executeBatch()方法，执行批量的SQL语句
-            rtn = pstmt.executeBatch();
-
-            // 最后一步：使用Connection对象，提交批量的SQL语句
-            conn.commit();
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            if(conn != null) {
-                datasource.push(conn);
-            }
         }
-
-        return rtn;
+        return res;
     }
 
     /**

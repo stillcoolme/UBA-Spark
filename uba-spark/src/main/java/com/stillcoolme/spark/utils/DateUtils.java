@@ -14,12 +14,21 @@ public class DateUtils {
 	
 	public static final SimpleDateFormat TIME_FORMAT =
 			new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+	public static ThreadLocal<SimpleDateFormat> TIME_FORMAT_THREADLOCAL =
+			new ThreadLocal<SimpleDateFormat>(){
+		@Override
+		protected SimpleDateFormat initialValue() {
+			return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+		}
+	};
 	public static final SimpleDateFormat DATE_FORMAT = 
 			new SimpleDateFormat("yyyy-MM-dd");
 
 	public static Date parseDate(String time){
 		try {
-			return TIME_FORMAT.parse(time);
+			Date result = TIME_FORMAT_THREADLOCAL.get().parse(time);
+			TIME_FORMAT_THREADLOCAL.remove();
+			return result;
 		} catch (ParseException e) {
 			e.printStackTrace();
 		}

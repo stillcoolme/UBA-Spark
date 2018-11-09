@@ -19,5 +19,9 @@ public class NumberUtils {
 		BigDecimal bd = new BigDecimal(num);  
 		return bd.setScale(scale, BigDecimal.ROUND_HALF_UP).doubleValue();
 	}
+
+	public static void main(String[] args) {
+		formatDouble(5.00 / 0.00, 2);
+	}
 	
 }
