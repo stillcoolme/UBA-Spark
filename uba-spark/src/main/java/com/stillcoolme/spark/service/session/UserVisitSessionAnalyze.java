@@ -112,6 +112,9 @@ public class UserVisitSessionAnalyze extends BaseService {
         //计算出各个范围的session占比，并连同聚合信息一起写入MySQL
         calculateAndPersistAggrStat(sessionAggrStatAccumulator.value(), task.getTaskid());
 
+        // 获取点击top10的品类信息
+        UserTop10CategoryAnalyze.getTop10Category(taskid, filteredSessionid2AggrInfoRDD, sessionid2actionRDD);
+
         // 关闭Spark上下文
         sparkSession.close();
 
