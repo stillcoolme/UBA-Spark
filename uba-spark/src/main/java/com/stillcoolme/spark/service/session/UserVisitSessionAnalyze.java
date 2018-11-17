@@ -12,7 +12,7 @@ import com.stillcoolme.spark.domain.SessionRandomExtract;
 import com.stillcoolme.spark.domain.Task;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.entity.RespEntity;
-import com.stillcoolme.spark.factory.DaoFactory;
+import com.stillcoolme.spark.dao.factory.DaoFactory;
 import com.stillcoolme.spark.service.BaseService;
 import com.stillcoolme.spark.utils.DateUtils;
 import com.stillcoolme.spark.utils.NumberUtils;

@@ -1,4 +1,4 @@
-package com.stillcoolme.spark.factory;
+package com.stillcoolme.spark.dao.factory;
 
 import com.stillcoolme.spark.dao.ISessionAggrStatDao;
 import com.stillcoolme.spark.dao.ISessionDetailDao;

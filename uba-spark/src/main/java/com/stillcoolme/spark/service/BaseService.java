@@ -3,7 +3,7 @@ package com.stillcoolme.spark.service;
 import com.stillcoolme.spark.dao.ITaskDao;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.entity.RespEntity;
-import com.stillcoolme.spark.factory.DaoFactory;
+import com.stillcoolme.spark.dao.factory.DaoFactory;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.DataFrameReader;
 import org.apache.spark.sql.SQLContext;
