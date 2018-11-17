@@ -2,7 +2,7 @@ package com.stillcoolme.spark.dao.impl;
 
 import java.sql.ResultSet;
 
-import com.stillcoolme.spark.dao.ITaskDAO;
+import com.stillcoolme.spark.dao.ITaskDao;
 import com.stillcoolme.spark.domain.Task;
 import com.stillcoolme.spark.helper.JDBCHelper;
 
@@ -11,7 +11,7 @@ import com.stillcoolme.spark.helper.JDBCHelper;
  * @author Administrator
  *
  */
-public class TaskDAOImpl implements ITaskDAO {
+public class TaskDaoImpl implements ITaskDao {
 
 	/**
 	 * 根据主键查询任务

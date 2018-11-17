@@ -3,16 +3,16 @@ package com.stillcoolme.spark.service.session;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.stillcoolme.spark.constant.Constants;
-import com.stillcoolme.spark.dao.ISessionAggrStatDAO;
-import com.stillcoolme.spark.dao.ISessionDetailDAO;
-import com.stillcoolme.spark.dao.ISessionRandomExtractDAO;
+import com.stillcoolme.spark.dao.ISessionAggrStatDao;
+import com.stillcoolme.spark.dao.ISessionDetailDao;
+import com.stillcoolme.spark.dao.ISessionRandomExtractDao;
 import com.stillcoolme.spark.domain.SessionAggrStat;
 import com.stillcoolme.spark.domain.SessionDetail;
 import com.stillcoolme.spark.domain.SessionRandomExtract;
 import com.stillcoolme.spark.domain.Task;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.entity.RespEntity;
-import com.stillcoolme.spark.factory.DAOFactory;
+import com.stillcoolme.spark.factory.DaoFactory;
 import com.stillcoolme.spark.service.BaseService;
 import com.stillcoolme.spark.utils.DateUtils;
 import com.stillcoolme.spark.utils.NumberUtils;
@@ -30,7 +30,6 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.util.AccumulatorV2;
 import scala.Tuple2;
-import scala.collection.JavaConversions;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -60,7 +59,7 @@ import java.util.Random;
  * Created by zhangjianhua on 2018/10/30.
  */
 public class UserVisitSessionAnalyze extends BaseService {
-    private Logger logger = Logger.getLogger(UserVisitSessionAnalyze.class);
+    private final static Logger logger = Logger.getLogger(UserVisitSessionAnalyze.class);
 
     @Override
     public RespEntity run(ReqEntity reqEntity) {
@@ -76,29 +75,29 @@ public class UserVisitSessionAnalyze extends BaseService {
         if (taskid == null) {
             return null;
         }
-        Task task = taskDAO.findById(taskid);
+        Task task = taskDao.findById(taskid);
         JSONObject taskParam = JSONObject.parseObject(task.getTaskParam());
 
         // 进行session粒度的数据聚合,首先要从user_visit_action表中，查询出来指定日期范围内的行为数据
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(taskParam);
+        // <session, visitActionInfo>
         JavaPairRDD<String, Row> sessionid2actionRDD = getSessionid2ActionRDD(actionRDD);
 
-        // 可以将行为数据，按照session_id进行groupByKey分组
-        // 此时的数据的粒度就是session粒度了，然后呢，可以将session粒度的数据
-        // 与用户信息数据，进行join
+        // 将行为数据，按照session_id进行groupByKey分组(session粒度)，然后与用户信息数据进行join
         // 然后就可以获取到session粒度的数据，同时呢，数据里面还包含了session对应的user的信息
-        // 到这里为止，获取的数据是<sessionid,(sessionid,searchKeywords,clickCategoryIds,visitlength,steplength, age,professional,city,sex)>
-        JavaPairRDD<String, String> sessionid2AggrInfoRDD =
-                aggregateBySession(actionRDD);
+        // 获取的数据变成<sessionid,(sessionid,searchKeywords,clickCategoryIds,visitlength, steplength, age,professional,city,sex)>
+        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD);
+
         logger.warn("过滤前: " + sessionid2AggrInfoRDD.count());
         for (Tuple2<String, String> tuple : sessionid2AggrInfoRDD.take(5)) {
-            logger.warn(tuple._2());
+            logger.warn(tuple._2);
         }
-        // 针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤， 然后再通过Accumulator聚合统计
+
+        // 注册Accumulator
         AccumulatorV2<String, String> sessionAggrStatAccumulator = new UserVisitSessionAccumulator();
         sparkSession.sparkContext().register(sessionAggrStatAccumulator, "sessionAggrStatAccumulator");
-        JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD =
-                filterSessionAndAggrStat(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
+        // 针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤， 然后再通过Accumulator聚合统计
+        JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSessionAndAggrStat(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
 
         // 将随机抽取的功能放在session聚合统计功能的最终计算和写库之前, 该方法里有一个countByKey算子，是action操作，会触发job
         // 随机抽取到session数据存入essionRandomExtract表，然后再得到抽取到session的详细操作数据存到
@@ -111,14 +110,14 @@ public class UserVisitSessionAnalyze extends BaseService {
         // 在这之前有多少个 action算子，这个Accumulator就会多运算几次，结果就会出错，所以一般是在插入mysql前执行action。
         logger.warn(sessionAggrStatAccumulator.value());
         //计算出各个范围的session占比，并连同聚合信息一起写入MySQL
-        calculateAndPersistAggrStat(sessionAggrStatAccumulator.value(),
-                task.getTaskid());
+        calculateAndPersistAggrStat(sessionAggrStatAccumulator.value(), task.getTaskid());
 
         // 关闭Spark上下文
         sparkSession.close();
 
         return null;
     }
+
 
     /**
      * 获取sessionid2到访问行为数据的映射的RDD
@@ -211,7 +210,7 @@ public class UserVisitSessionAnalyze extends BaseService {
                         List extractIndexList = session2extractlistMap.get(datehour);
                         Iterator<String> iterator = tuple._2.iterator();
                         List<Tuple2<String, String>> extractSessionids = new ArrayList<Tuple2<String, String>>();
-                        ISessionRandomExtractDAO sessionRandomExtractDAO = DAOFactory.getSessionRandomExtractDAO();
+                        ISessionRandomExtractDao sessionRandomExtractDao = DaoFactory.getSessionRandomExtractDao();
                         int index  = 0;
                         for(String sessionAggrInfo: tuple._2){
                             //String sessionAggrInfo = iterator.next();
@@ -223,8 +222,7 @@ public class UserVisitSessionAnalyze extends BaseService {
                                 String searchKeyWords = StringUtils.getFieldFromConcatString(sessionAggrInfo, Constants.REGEX_SPLIT, Constants.FIELD_SEARCH_KEYWORDS);
                                 String clickCategoryIds = StringUtils.getFieldFromConcatString(sessionAggrInfo, Constants.REGEX_SPLIT, Constants.FIELD_CLICK_CATEGORY_IDS);
                                 sessionRandomExtract.set(taskid, sessionid, startTime, searchKeyWords, clickCategoryIds);
-                                //添加到List中然后持久化到数据库中
-                                sessionRandomExtractDAO.insert(sessionRandomExtract);
+                                sessionRandomExtractDao.insert(sessionRandomExtract);
                                 // 将sessionid加入list
                                 extractSessionids.add(new Tuple2<String, String>(sessionid, sessionid));
                             }
@@ -263,8 +261,8 @@ public class UserVisitSessionAnalyze extends BaseService {
                 sessionDetail.setOrderProductIds(row.getString(9));
                 sessionDetail.setPayCategoryIds(row.getString(10));
                 sessionDetail.setPayProductIds(row.getString(11));
-                ISessionDetailDAO sessionDetailDAO = DAOFactory.getSessionDetailDAO();
-                sessionDetailDAO.insert(sessionDetail);
+                ISessionDetailDao sessionDetailDao = DaoFactory.getSessionDetailDao();
+                sessionDetailDao.insert(sessionDetail);
             }
         });
         extractSessionDetailRDD.count();
@@ -694,8 +692,8 @@ public class UserVisitSessionAnalyze extends BaseService {
         sessionAggrStat.setStep_length_30_60_ratio(step_length_30_60_ratio);
         sessionAggrStat.setStep_length_60_ratio(step_length_60_ratio);
 
-        // 调用对应的DAO插入统计结果
-        ISessionAggrStatDAO sessionAggrStatDAO = DAOFactory.getSessionAggrStatDAO();
-        sessionAggrStatDAO.insert(sessionAggrStat);
+        // 调用对应的Dao插入统计结果
+        ISessionAggrStatDao sessionAggrStatDao = DaoFactory.getSessionAggrStatDao();
+        sessionAggrStatDao.insert(sessionAggrStat);
     }
 }

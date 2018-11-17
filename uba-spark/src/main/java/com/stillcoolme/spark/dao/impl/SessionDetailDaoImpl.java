@@ -1,5 +1,6 @@
-package com.stillcoolme.spark.dao;
+package com.stillcoolme.spark.dao.impl;
 
+import com.stillcoolme.spark.dao.ISessionDetailDao;
 import com.stillcoolme.spark.domain.SessionDetail;
 import com.stillcoolme.spark.helper.JDBCHelper;
 
@@ -12,7 +13,7 @@ import java.util.List;
  * @author Administrator
  *
  */
-public class SessionDetailDAOImpl implements ISessionDetailDAO {
+public class SessionDetailDaoImpl implements ISessionDetailDao {
 
 	/**
 	 * 插入一条session明细数据
@@ -61,7 +62,7 @@ public class SessionDetailDAOImpl implements ISessionDetailDAO {
 					sessionDetail.getPayProductIds()};  
 			paramsList.add(params);
 		}
-		JDBCHelper.getInstance().excuteBatch(sql, paramsList);
+		JDBCHelper.getInstance().executeBatch(sql, paramsList);
 	}
 	
 }

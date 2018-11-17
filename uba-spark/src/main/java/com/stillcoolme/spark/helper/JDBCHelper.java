@@ -166,9 +166,7 @@ public class JDBCHelper {
                     pstmt.setObject(i + 1, params[i]);
                 }
             }
-
             rtn = pstmt.executeUpdate();
-
             conn.commit();
         } catch (Exception e) {
             e.printStackTrace();
@@ -221,7 +219,7 @@ public class JDBCHelper {
      * @param params
      * @return
      */
-    public int[] excuteBatch(String sql,List<Object[]> params)
+    public int[] executeBatch(String sql,List<Object[]> params)
     {
         Connection connection=null;
         PreparedStatement statement=null;

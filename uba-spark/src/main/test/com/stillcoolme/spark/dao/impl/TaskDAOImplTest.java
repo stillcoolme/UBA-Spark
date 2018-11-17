@@ -7,7 +7,7 @@ import org.junit.Before;
 import org.junit.After; 
 
 /** 
-* TaskDAOImpl Tester. 
+* TaskDaoImpl Tester.
 * @since <pre>10/24/2018</pre> 
 */ 
 public class TaskDAOImplTest { 

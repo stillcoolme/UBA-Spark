@@ -1,9 +1,9 @@
 package com.stillcoolme.spark.service;
 
-import com.stillcoolme.spark.dao.ITaskDAO;
+import com.stillcoolme.spark.dao.ITaskDao;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.entity.RespEntity;
-import com.stillcoolme.spark.factory.DAOFactory;
+import com.stillcoolme.spark.factory.DaoFactory;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.DataFrameReader;
 import org.apache.spark.sql.SQLContext;
@@ -21,7 +21,7 @@ public abstract class BaseService implements java.io.Serializable{
     public static DataFrameReader reader=null;
 
     // 创建需要使用的DAO组件
-    public ITaskDAO taskDAO = DAOFactory.getTaskDAO();
+    public ITaskDao taskDao = DaoFactory.getTaskDao();
 
     public abstract RespEntity run(ReqEntity req);
 

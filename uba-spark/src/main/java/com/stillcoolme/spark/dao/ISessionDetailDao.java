@@ -9,7 +9,7 @@ import java.util.List;
  * @author Administrator
  *
  */
-public interface ISessionDetailDAO {
+public interface ISessionDetailDao {
 
 	/**
 	 * 插入一条session明细数据
