@@ -1,13 +1,13 @@
 package com.stillcoolme.spark.dao.impl; 
 
-import com.stillcoolme.spark.dao.ITaskDAO;
+import com.stillcoolme.spark.dao.ITaskDao;
 import com.stillcoolme.spark.domain.Task;
 import org.junit.Test;
 import org.junit.Before; 
 import org.junit.After; 
 
 /** 
-* TaskDAOImpl Tester. 
+* TaskDaoImpl Tester.
 * @since <pre>10/24/2018</pre> 
 */ 
 public class TaskDAOImplTest { 
@@ -25,7 +25,7 @@ public class TaskDAOImplTest {
     */
     @Test
     public void testFindById() throws Exception {
-        ITaskDAO iTaskDAO = new TaskDAOImpl();
+        ITaskDao iTaskDAO = new TaskDaoImpl();
         Task task = iTaskDAO.findById(1);
         System.out.println(task.getTaskName());
     }

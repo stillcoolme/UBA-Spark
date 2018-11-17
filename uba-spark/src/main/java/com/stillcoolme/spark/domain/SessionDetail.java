@@ -1,11 +1,13 @@
 package com.stillcoolme.spark.domain;
 
+import java.io.Serializable;
+
 /**
  * Session明细
  * @author Administrator
  *
  */
-public class SessionDetail {
+public class SessionDetail implements Serializable {
 
 	private long taskid;
 	private long userid;

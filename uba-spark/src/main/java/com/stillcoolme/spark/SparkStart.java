@@ -46,7 +46,7 @@ public class SparkStart {
 
         BaseService baseService = new UserVisitSessionAnalyze();
         ReqEntity reqEntity = new ReqEntity();
-        reqEntity.setReqData("[{\"taskId\":1}]");
+        reqEntity.setReqData("[{\"taskId\":2}]");
         baseService.run(reqEntity);
 
         // 关闭Spark上下文
@@ -63,7 +63,7 @@ public class SparkStart {
     private static SQLContext getSQLContext(SparkContext sc) {
         String runMode = Config.sparkProps.getProperty(Constants.SPARK_MASTER);
         if(runMode.equals("local")) {
-            return new SQLContext(sc);
+            return BaseService.sparkSession.sqlContext();
         } else {
 //            return new HiveContext(sc);
             return null;

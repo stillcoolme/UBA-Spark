@@ -1,7 +1,7 @@
 package com.stillcoolme.spark.dao.impl;
 
 
-import com.stillcoolme.spark.dao.ISessionAggrStatDAO;
+import com.stillcoolme.spark.dao.ISessionAggrStatDao;
 import com.stillcoolme.spark.domain.SessionAggrStat;
 import com.stillcoolme.spark.helper.JDBCHelper;
 
@@ -10,7 +10,7 @@ import com.stillcoolme.spark.helper.JDBCHelper;
  * @author Administrator
  *
  */
-public class SessionAggrStatDAOImpl implements ISessionAggrStatDAO {
+public class SessionAggrStatDaoImpl implements ISessionAggrStatDao {
 	
 	/**
 	 * 插入session聚合统计结果

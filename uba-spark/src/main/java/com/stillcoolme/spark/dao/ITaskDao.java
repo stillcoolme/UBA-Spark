@@ -7,7 +7,7 @@ import com.stillcoolme.spark.domain.Task;
  * @author Administrator
  *
  */
-public interface ITaskDAO {
+public interface ITaskDao {
 	
 	/**
 	 * 根据主键查询任务

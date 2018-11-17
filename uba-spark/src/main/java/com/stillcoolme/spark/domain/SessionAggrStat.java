@@ -6,7 +6,7 @@ import java.io.Serializable;
  * session聚合统计
  * Created by zhangjianhua on 2018/11/7.
  */
-public class SessionAggrStat {
+public class SessionAggrStat implements Serializable{
 
     private long taskid;
     private long session_count;
