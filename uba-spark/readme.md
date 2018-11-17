@@ -58,13 +58,14 @@ session访问时长，也就是说一个session对应的开始的action，到结
 这个按照时间比例是什么意思呢？随机抽取本身是很简单的，但是按照时间比例，就很复杂了。比如说，这一天总共有1000万的session。那么我现在总共要从这1000万session中，随机抽取出来1000个session。但是这个随机不是那么简单的。需要做到如下几点要求：首先，如果这一天的12:00~13:00的session数量是100万，那么这个小时的session占比就是1/10，那么这个小时中的100万的session，我们就要抽取1/10 * 1000 = 100个。然后再从这个小时的100万session中，随机抽取出100个session。以此类推，其他小时的抽取也是这样做。
 这个功能的作用，是说，可以让使用者，能够对于符合条件的session，按照时间比例均匀的随机采样出1000个session，然后观察每个session具体的点击流/行为，比如先进入了首页、然后点击了食品品类、然后点击了雨润火腿肠商品、然后搜索了火腿肠罐头的关键词、接着对王中王火腿肠下了订单、最后对订单做了支付。
 之所以要做到按时间比例随机采用抽取，就是要做到，观察样本的公平性。
+
 思路：
 需求上已经明确了。那么剩下的就是具体的实现了。具体的实现这里不多说，技术上来说，就是要综合运用Spark的countByKey、groupByKey、mapToPair等算子，来开发一个复杂的按时间比例随机均匀采样抽取的算法。（大数据算法）
 
 
 4、在符合条件的session中，获取点击、下单和支付数量排名前10的品类。
 对于这些session，每个session可能都会对一些品类的商品进行点击、下单和支付等等行为。那么现在就需要获取这些session点击、下单和支付数量排名前10的最热门的品类。也就是说，要计算出所有这些session对各个品类的点击、下单和支付的次数，然后按照这三个属性进行排序，获取前10个品类。
-这个需求是很有意义的，因为这样，就可以让数据分析师、产品经理、公司高层，随时随地都可以看到自己感兴趣的那一批用户最喜欢的10个品类，清晰地了解到不同层次、不同类型的用户的心理和喜好，从而对自己公司和产品的定位有清晰的了解，并且可以更加深入的了解自己的用户，更好的调整公司战略。
+这个功能，很重要，就可以让我们明白，符合条件的用户，他最感兴趣的商品是什么种类。这个可以让公司里的人，清晰地了解到不同层次、不同类型的用户的心理和喜好。
 思路：
 使用Spark的自定义Key二次排序算法的技术，来实现所有品类，按照三个字段，点击数量、下单数量、支付数量依次进行排序，首先比较点击数量，如果相同的话，那么比较下单数量，如果还是相同，那么比较支付数量。
 
@@ -198,6 +199,164 @@ JSON是起到了什么作用呢？我们在task表中的task_param字段，会�
 如何来操作JSON格式的数据？
 
 比如说，要获取JSON中某个字段的值。我们这里使用的是阿里的fastjson工具包。使用这个工具包，可以方便的将字符串类型的JSON数据，转换为一个JSONObject对象，然后通过其中的getX()方法，获取指定的字段的值。
+
+## session聚合统计
+session聚合统计（统计出访问时长和访问步长，各个区间的session数量占总session数量的比例）
+
+### 6.1 按条件筛选session
+从数据库获取task参数，然后去筛选session。
+要进行session粒度的数据聚合。
+首先要从user_visit_action表中，查询出来指定日期范围内的行为数据（过滤）。
+
+1. 第一步：aggregateBySession() 
+先将行为数据，按照session_id进行groupByKey分组，此时的数据的粒度就是session粒度了 （通过mapToPair ！！）
+然后，可以将session粒度的数据，与用户信息数据，进行join。
+就可以获取到session粒度的数据，同时数据里面还包含了session对应的user 和 session搜索行为的信息。
+
+2. 第二步：
+```
+JavaRDD<Row> actionRDD = getActionRDDByDateRange(taskParam);
+
+JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD);
+// 到这里为止，获取的数据是<sessionid,(sessionid,searchKeywords,clickCategoryIds,age,professional,city,sex)> 
+```
+
+3. 第三步：
+针对session粒度的聚合数据，按照平台用户指定的筛选参数进行数据过滤。
+通过filter算子，筛选出符合平台用户的筛选参数的 sessionid, AggrInfo 数据。
+```
+JavaPairRDD<String, String> filteredSessionid2AggrInfo =
+                filterSession(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
+```
+注意访问外面的任务参数taskParam，要设为final（因为匿名内部类（算子函数），访问外部对象，是要给外部对象使用final修饰的）。
+
+
+aggregateBySession() 的具体实现里面 三次用到了 mapToPair 算子！！！
+用来调整数据结构、分组，形成Tuple2形式的 key,value。
+一般的需求基本都要用到这个套路进行数据分组。。。
+
+
+### 6.2 session聚合统计-- 自定义accumulator
+需求：统计6.1过滤出来的session中，访问时长在0s~3s的session的数量，占总session数量的比例。
+
+**原生Accumulator**
+如果每种步长的都用一个Accumulator
+Accumulator 1s_3s = sc.accumulator(0L);
+就要十几个Accumulator。
+
+对过滤以后的session，调用foreach也可以，遍历所有session；
+计算每个session的访问时长和访问步长；
+访问时长：把session的最后一个action的时间，减去第一个action的时间
+访问步长：session的action数量
+计算出访问时长和访问步长以后，根据对应的区间，找到对应的Accumulator，然后1s_3s.add(1L)
+同时每遍历一个session，就可以给总session数量对应的Accumulator，加1
+最后用各个区间的session数量，除以总session数量，就可以计算出各个区间的占比了
+
+这种传统的实现方式，Accumulator太多了，不便于维护。
+
+**自定义Accumulator**
+我们自己自定义一个Accumulator，实现较为复杂的复杂分布式计算逻辑，用一个Accumulator维护了所有范围区间的数量的统计逻辑。更方便进行中间状态的维护，而且不用担心并发和锁的问题。
+```
+Spark2.x的是AccumulatorV2，要实现多个方法。其中add方法
+/**
+ * 在连接串counter中，找到key对应的value，累加1，然后再更新回counter里面去。
+ * 例如传入 1s_3s， 则将 counter中的 1s_3s=0 累加1变成 1s_3s=1
+ * @param key 范围key
+ */
+@Override
+public void add(String key) {
+    if(StringUtils.isEmpty(counter)){
+        return;
+    }
+    // 使用StringUtils工具类，从v1中，提取v2对应的值，并累加1
+    String oldValue = StringUtils.getFieldFromConcatString(counter, Constants.REGEX_SPLIT, key);
+    if(oldValue != null){
+        int newValue = Integer.valueOf(oldValue) + 1;
+        String newCounter = StringUtils.setFieldInConcatString(counter, Constants.REGEX_SPLIT, key, String.valueOf(newValue));
+        this.counter = newCounter;
+    }
+}
+```
+
+
+### 6.3 session聚合统计-- 添加计算时长步长的具体逻辑
+在6.1基础上添加中添加 
+1. 计算session访问步长，访问时长。
+2. 在过滤算子计算时使用自定义Accumulator统计访问步长、访问时长。
+
+* 首先注册自定义Accumulator。
+```
+AccumulatorV2<String, String> sessionAggrStatAccumulator = new UserVisitSessionAccumulator();
+sparkSession.sparkContext().register(sessionAggrStatAccumulator, "sessionAggrStatAccumulator");
+```
+* 然后将Accumulator作为 6.1的 filterSession的参数，修改方法名为filterSessionAndAggrStat，过滤并做聚合信息的统计
+```
+JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD =
+                filterSessionAndAggrStat(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
+```
+
+* filterSessionAndAggrStat方法里在filter算子中，在过滤调教最后，取出session中的 visitLength、steplength，进行相应的累加计数。
+```
+long visitLength = Long.valueOf(StringUtils.getFieldFromConcatString(
+        aggrInfo, Constants.REGEX_SPLIT, Constants.FIELD_VISIT_LENGTH));
+long stepLength = Long.valueOf(StringUtils.getFieldFromConcatString(
+        aggrInfo, Constants.REGEX_SPLIT, Constants.FIELD_STEP_LENGTH));
+calculateVisitLength(visitLength);
+calculateStepLength(stepLength);
+sessionAggrStatAccumulator.add(Constants.SESSION_COUNT);
+```
+
+```
+/**
+ * 计算访问时长范围
+ * @param visitLength
+ */
+private void calculateVisitLength(long visitLength) {
+    if (visitLength > 0 && visitLength < 3) {
+        sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_1s_3s);
+    } else if (visitLength >= 4 && visitLength <= 6) {
+        sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_4s_6s);
+    } else if (visitLength >= 7 && visitLength <= 9) {
+    ...
+}
+```
+
+Accumulator这种分布式累加计算的变量是懒加载的，需要action算子触发，而运行了多少次action，这个Accumulator就会多运算几次，结果就会出错，所以一般是在插入mysql前执行一次action。
+计算出来的结果，在J2EE中，是怎么显示的，是用两张柱状图显示。
+
+要遵循开发Spark大型复杂项目的一些经验准则：
+1. 尽量少生成RDD
+2. 尽量少对RDD进行算子操作，尽量在一个算子里面，实现多个需要做的功能
+3. 尽量少对RDD进行shuffle算子操作，比如groupByKey、reduceByKey、sortByKey（map、mapToPair）。shuffle操作，会导致大量的磁盘读写，严重降低性能。有shuffle的算子，和没有shuffle的算子，性能会有很大的差别。有shfufle的算子，很容易导致数据倾斜，一旦数据倾斜，简直就是性能杀手（完整的解决方案）
+4、无论做什么功能，性能第一
+  在传统的J2EE或者.NET后者PHP，软件/系统/网站开发中，我认为是架构和可维护性，可扩展性的重要程度，远远高于了性能，大量的分布式的架构，设计模式，代码的划分，类的划分（高并发网站除外）
+  在大数据项目中，比如MapReduce、Hive、Spark、Storm，我认为性能的重要程度，远远大于一些代码的规范，和设计模式，代码的划分，类的划分；大数据，大数据，最重要的，就是性能。主要就是因为大数据以及大数据项目的特点，决定了，大数据的程序和项目的速度，都比较慢。如果不优先考虑性能的话，会导致一个大数据处理程序运行时间长度数个小时，甚至数十个小时。此时，对于用户体验，简直就是一场灾难。
+
+
+## 7 session随机抽取
+每一次执行用户访问session分析模块，要抽取出100个session。
+
+session随机抽取：按每天的每个小时的session数量，占当天session总数的比例，乘以每天要抽取的session数量，计算出每个小时要抽取的session数量；然后呢，在每天每小时的session中，随机抽取出之前计算出来的数量的session。
+
+举例：10000个session，要取100个session；
+0点~1点之间，有2000个session，占总session的比例就是0.2；
+按照比例，0点~1点需要抽取出来的session数量是100 * 0.2 = 20个；
+然后在0~2000之间产生20个随机数作为索引。
+最后，在0点~点的2000个session中，通过上面的20个索引抽取20个session。
+
+具体步骤：
+1. mapToPair得到 time2sessionidRDD 格式： \\<\\yyyy-MM-dd_HH,aggrInfo\\>
+2. time2sessionidRDD通过countByKey，可知每个小时的session数量
+3. 随机插取算法
+4. time2sessionidRDD通过groupByKey，得到time2sessionsRDD，可知每个小时的session Iterable
+5. time2sessionsRDD执行flatMapToPair遍历每小时session，在索引上则抽取。
+6. 再和action数据join，来得到这些被抽取session的详细行为信息。
+
+不足：
+1. 第一个mapToPair返回的应该是Tuple2(dateHour, aggrInfo)比较好，而不是Tuple2(dateHour, sessionId)，可以给以后用。
+2. flatMappair不知道什么鬼。
+3. join也不会了。
+
 
 ## 10 遇到的问题
 

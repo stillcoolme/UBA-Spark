@@ -154,16 +154,21 @@ public class JDBCHelper {
         int rtn = 0;
         Connection conn = null;
         PreparedStatement pstmt = null;
+
         try {
             conn = getConnection();
             conn.setAutoCommit(false);
+
             pstmt = conn.prepareStatement(sql);
+
             if(params != null && params.length > 0) {
                 for(int i = 0; i < params.length; i++) {
                     pstmt.setObject(i + 1, params[i]);
                 }
             }
+
             rtn = pstmt.executeUpdate();
+
             conn.commit();
         } catch (Exception e) {
             e.printStackTrace();
@@ -172,6 +177,7 @@ public class JDBCHelper {
                 datasource.push(conn);
             }
         }
+
         return rtn;
     }
 
@@ -215,7 +221,7 @@ public class JDBCHelper {
      * @param params
      * @return
      */
-    public int[] executeBatch(String sql,List<Object[]> params)
+    public int[] excuteBatch(String sql,List<Object[]> params)
     {
         Connection connection=null;
         PreparedStatement statement=null;

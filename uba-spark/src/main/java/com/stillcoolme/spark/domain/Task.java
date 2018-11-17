@@ -7,7 +7,9 @@ import java.io.Serializable;
  * @author Administrator
  *
  */
-public class Task implements Serializable{
+public class Task implements Serializable {
+	
+	private static final long serialVersionUID = 3518776796426921776L;
 
 	private long taskid;
 	private String taskName;
