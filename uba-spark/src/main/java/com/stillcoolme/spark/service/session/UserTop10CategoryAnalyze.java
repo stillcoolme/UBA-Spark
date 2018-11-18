@@ -25,25 +25,13 @@ public class UserTop10CategoryAnalyze {
 
     /**
      * 获取top10热门品类
-     *
-     * @param filteredSessionid2AggrInfoRDD
-     * @param sessionid2actionRDD
+     * @param
      */
-    public static void getTop10Category(Long taskId, JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD, JavaPairRDD<String, Row> sessionid2actionRDD) {
-        // 1. 获取符合条件的session访问明细
-        JavaPairRDD<String, Tuple2<String, Row>> rdd = filteredSessionid2AggrInfoRDD.join(sessionid2actionRDD);
-        JavaPairRDD<String, Row> sessionid2detailRDD = rdd.mapToPair(
-                new PairFunction<Tuple2<String, Tuple2<String, Row>>, String, Row>() {
-                    private static final long serialVersionUID = 1L;
-                    @Override
-                    public Tuple2<String, Row> call(Tuple2<String, Tuple2<String, Row>> tuple) throws Exception {
-                        return new Tuple2<String, Row>(tuple._1, tuple._2._2);
-                    }
-                }
-        );
+    public static List<Long> getTop10Category(Long taskId, JavaPairRDD<String, Row> sessionid2DetailRDD, JavaPairRDD<String, Row> sessionid2detailRDD) {
+        // 1. 获取符合条件的session访问明细, 即sessionid2DetailRDD
 
         // 2. 获取session访问过(点击过、下单过、支付过)的所有品类id
-        JavaPairRDD<Long, Long> categoryidRDD = sessionid2detailRDD.flatMapToPair(
+        JavaPairRDD<Long, Long> categoryidRDD = sessionid2DetailRDD.flatMapToPair(
                 new PairFlatMapFunction<Tuple2<String, Row>, Long, Long>() {
                     private static final long serialVersionUID = 1L;
                     @Override
@@ -111,9 +99,11 @@ public class UserTop10CategoryAnalyze {
         // 6. 用take(10)取出top10热门品类，并写入MySQL
         List<Tuple2<CategorySortKey, String>> top10CategoryList = sortedCategoryCountRDD.take(10);
         List<Top10Category> top10Categories = new ArrayList<Top10Category>();
+        List<Long> top10CategoryId = new ArrayList<>();
         for (Tuple2<CategorySortKey, String> tuple2 : top10CategoryList) {
             String countInfo = tuple2._2;
             Long categoryId = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, Constants.REGEX_SPLIT, Constants.FIELD_CATEGORY_ID));
+            top10CategoryId.add(categoryId);
             Long clickCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, Constants.REGEX_SPLIT, Constants.FIELD_CLICK_COUNT));
             Long orderCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, Constants.REGEX_SPLIT, Constants.FIELD_ORDER_COUNT));
             Long payCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, Constants.REGEX_SPLIT, Constants.FIELD_PAY_COUNT));
@@ -123,6 +113,7 @@ public class UserTop10CategoryAnalyze {
         }
         DaoFactory.getTop10CategoryDao().batchInsert(top10Categories);
 
+        return top10CategoryId;
     }
 
     // 连接品类RDD与数据RDD

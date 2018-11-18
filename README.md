@@ -27,6 +27,8 @@
 
 ### 2.0 需求及表设计
 
+不能光coding啊，做每个功能前先清楚需求先。
+
 ### 2.1 session聚合统计
 session聚合统计（统计出访问时长和访问步长，各个区间的session数量占总session数量的比例）
 
@@ -210,3 +212,19 @@ session随机抽取：按每天的每个小时的session数量，占当天sessio
 7. 将top10热门品类，以及每个品类的点击、下单和支付次数，写入MySQL数据库
 8. 本地测试
 9. 使用Scala来开发二次排序key
+
+### 2.4 top10活跃session
+从上一步的top10热门品类，获取每个Top10Category的点击该品类次数最高的前10个session用户(得到一百个session)，以及其对应的访问明细。
+
+实现思路分析：
+1. 拿到符合筛选条件的session的明细数据
+2. 按照session粒度进行聚合，groupBySession，再用flatMap算子获取到各session对每个品类的点击次数，返回的是<categoryid,(sessionid,clickCount)>
+3. top10品类join一下步骤2，就得到各session对top10品类的点击次数
+4. 按照品类id，groupByKey分组取top10，flatMapToPair获取到对这品类点击次数最多的前10个session，直接写入MySQL表；返回的是sessionid
+5. 获取各品类top10活跃session的访问明细数据，写入MySQL
+6. 本地测试。
+
+做了：
+1. 重构一下之前的代码，将通过筛选条件的session的访问明细数据RDD，提取成公共的RDD；这样就不用重复计算同样的RDD
+2. 将之前计算出来的top10热门品类的id，生成一个PairRDD，方便后面进行join
+3. 车祸现场：最后一步每个品类取top10session的时候，把count作为key来排序了，结果翻车了，每次put入相同count的就覆盖了啊！所以要用sessionId作为key。应该是```count2sessionIdMap.put(sessionId, count);```

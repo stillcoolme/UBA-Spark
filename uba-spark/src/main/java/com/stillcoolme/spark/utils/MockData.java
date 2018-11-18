@@ -43,7 +43,8 @@ public class MockData {
 			long userid = random.nextInt(100);    
 			
 			for(int j = 0; j < 100; j++) {
-				String sessionid = UUID.randomUUID().toString().replace("-", "");  
+				String sessionid = "session" + String.valueOf(random.nextInt(50));
+				//String sessionid = UUID.randomUUID().toString().replace("-", "");
 				String baseActionTime = date + " " + random.nextInt(23);
 				  
 				for(int k = 0; k < random.nextInt(100); k++) {
