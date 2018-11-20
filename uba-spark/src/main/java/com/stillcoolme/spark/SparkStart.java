@@ -31,6 +31,7 @@ public class SparkStart {
         String runMode = Config.sparkProps.getProperty(Constants.SPARK_MASTER);
 
         SparkConf conf = new SparkConf().setMaster(runMode).setAppName(appName);
+        conf.set("spark.default.parallelism", "20");
 
         BaseService.sparkSession = SparkSession.builder().config(conf).getOrCreate();
         BaseService.javaSparkContext = new JavaSparkContext(BaseService.sparkSession.sparkContext());

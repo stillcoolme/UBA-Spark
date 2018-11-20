@@ -28,6 +28,7 @@ import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.storage.StorageLevel;
 import org.apache.spark.util.AccumulatorV2;
 import scala.Tuple2;
 
@@ -82,26 +83,23 @@ public class UserVisitSessionAnalyze extends BaseService {
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(taskParam);
         // <session, visitActionInfo>
         JavaPairRDD<String, Row> sessionid2ActionRDD = getSessionid2ActionRDD(actionRDD);
-
-        // 将行为数据，按照session_id进行groupByKey分组(session粒度)，然后与用户信息数据进行join
-        // 然后就可以获取到session粒度的数据，同时呢，数据里面还包含了session对应的user的信息
+        sessionid2ActionRDD = sessionid2ActionRDD.persist(StorageLevel.MEMORY_ONLY());
+        // 将行为数据根据session_id进行groupByKey分组(session粒度)，然后与用户信息数据进行join就可以获取到session粒度的操作及用户数据
         // 获取的数据变成<sessionid,(sessionid,searchKeywords,clickCategoryIds,visitlength, steplength, age,professional,city,sex)>
-        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD);
+        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sessionid2ActionRDD);
 
         logger.warn("过滤前: " + sessionid2AggrInfoRDD.count());
-        for (Tuple2<String, String> tuple : sessionid2AggrInfoRDD.take(5)) {
+        for (Tuple2<String, String> tuple : sessionid2AggrInfoRDD.take(1)) {
             logger.warn(tuple._2);
         }
-
         // 注册Accumulator
         AccumulatorV2<String, String> sessionAggrStatAccumulator = new UserVisitSessionAccumulator();
         sparkSession.sparkContext().register(sessionAggrStatAccumulator, "sessionAggrStatAccumulator");
         // 针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤， 然后再通过Accumulator聚合统计
         JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSessionAndAggrStat(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
-
+        filteredSessionid2AggrInfoRDD = filteredSessionid2AggrInfoRDD.persist(StorageLevel.MEMORY_ONLY());
 
         // 将随机抽取的功能放在session聚合统计功能的最终计算和写库之前, 该方法里有一个countByKey算子，是action操作，会触发job
-        // 随机抽取到session数据存入essionRandomExtract表，然后再得到抽取到session的详细操作数据存到
         randomExtractSession(taskid, filteredSessionid2AggrInfoRDD, sessionid2ActionRDD, 20);
 
 //        logger.warn("过滤后: " + filteredSessionid2AggrInfoRDD.count());
@@ -113,7 +111,10 @@ public class UserVisitSessionAnalyze extends BaseService {
         //计算出各个范围的session占比，并连同聚合信息一起写入MySQL
         calculateAndPersistAggrStat(sessionAggrStatAccumulator.value(), task.getTaskid());
 
+        // 经过筛选的session的明细数据，可否放在随机抽取前面？给随机抽取方法用，这样随机抽取就不用遍历这么多了。
         JavaPairRDD<String, Row> sessionId2DetailRDD = getFilterSessionid2AggrInfoRDD(filteredSessionid2AggrInfoRDD, sessionid2ActionRDD);
+        sessionid2ActionRDD = sessionId2DetailRDD.persist(StorageLevel.MEMORY_ONLY());
+
         // 获取点击top10的品类信息
         List<Long> top10Ids = UserTop10CategoryAnalyze.getTop10Category(taskid, sessionId2DetailRDD, sessionid2ActionRDD);
         // 获取top10的session
@@ -136,6 +137,7 @@ public class UserVisitSessionAnalyze extends BaseService {
             private static final long serialVersionUID = 1L;
             @Override
             public Tuple2<String, Row> call(Row row) throws Exception {
+                // row.getString(2) 得到 sessionId
                 return new Tuple2<String, Row>(row.getString(2), row);
             }
         });
@@ -187,20 +189,21 @@ public class UserVisitSessionAnalyze extends BaseService {
     /**
      * 对行为数据按session粒度进行聚合
      *
-     * @param actionRDD 行为数据RDD
+     * @param sessionid2ActionRDD <sessionId, 行为数据>RDD
      * @return session粒度聚合数据
      */
-    private static JavaPairRDD<String, String> aggregateBySession(JavaRDD<Row> actionRDD) {
+    private static JavaPairRDD<String, String> aggregateBySession(JavaPairRDD<String, Row> sessionid2ActionRDD) {
         // actionRDD中的元素是Row，一个Row就是一行用户访问行为记录，比如一次点击或者搜索，将这个Row映射成<sessionid,Row>的格式
-        JavaPairRDD<String, Row> sessionid2ActionRDD = actionRDD.mapToPair(
-                new PairFunction<Row, String, Row>() {
-                    private static final long serialVersionUID = 1L;
-                    @Override
-                    public Tuple2<String, Row> call(Row row) throws Exception {
-                        return new Tuple2<String, Row>(row.getString(2), row);
-                    }
+//        JavaPairRDD<String, Row> sessionid2ActionRDD = actionRDD.mapToPair(
+//                new PairFunction<Row, String, Row>() {
+//                    private static final long serialVersionUID = 1L;
+//                    @Override
+//                    public Tuple2<String, Row> call(Row row) throws Exception {
+//                        return new Tuple2<String, Row>(row.getString(2), row);
+//                    }
+//
+//                });
 
-                });
         // 对行为数据按session粒度进行分组
         JavaPairRDD<String, Iterable<Row>> sessionid2ActionsRDD =
                 sessionid2ActionRDD.groupByKey();
