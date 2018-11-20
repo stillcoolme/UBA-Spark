@@ -88,7 +88,7 @@ public class UserTop10ActiveSessionAnalyse {
                 @Override
                 public Tuple2<Long, String> call(
                         Tuple2<Long, Tuple2<Long, String>> tuple) throws Exception {
-                    //LOG.warn(tuple._1 + " 点击了次数: " +tuple._2._2);
+                    LOG.warn(tuple._1 + " 点击了次数: " +tuple._2._2);
                     return new Tuple2<Long, String>(tuple._1, tuple._2._2);
                 }
             }
@@ -152,11 +152,10 @@ public class UserTop10ActiveSessionAnalyse {
                 }
             }
          );
-        top10SessionRDD.count();
 
         // 4. 获取top10活跃session的明细数据，并写入MySQL
         JavaPairRDD<String, Tuple2<String, Row>> sessionDetailRDD =
-                top10SessionRDD.join(sessionId2DetailRDD);
+                (JavaPairRDD<String, Tuple2<String, Row>>) top10SessionRDD.join(sessionId2DetailRDD);
         sessionDetailRDD.foreach(new VoidFunction<Tuple2<String,Tuple2<String,Row>>>() {
             private static final long serialVersionUID = 1L;
             @Override

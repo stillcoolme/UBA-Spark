@@ -228,3 +228,92 @@ session随机抽取：按每天的每个小时的session数量，占当天sessio
 1. 重构一下之前的代码，将通过筛选条件的session的访问明细数据RDD，提取成公共的RDD；这样就不用重复计算同样的RDD
 2. 将之前计算出来的top10热门品类的id，生成一个PairRDD，方便后面进行join
 3. 车祸现场：最后一步每个品类取top10session的时候，把count作为key来排序了，结果翻车了，每次put入相同count的就覆盖了啊！所以要用sessionId作为key。应该是```count2sessionIdMap.put(sessionId, count);```
+
+
+## 3. 性能调优
+接下来要做什么？
+按照本人开发过的大量的单个spark作业，处理10亿到100亿级别数据的经验，要针对我们写好的spark作业程序，实施十几个到二十个左右的复杂性调优技术；
+1. 性能调优相关的原理讲解；
+2. 性能调优技术的实施；
+3. 实际经验中应用性能调优技术的经验总结；
+4. 掌握一整套复杂的Spark企业级性能调优解决方案；而不只是简单的一些性能调优技巧。
+5. 数据倾斜解决方案：针对写好的spark作业，实施一整套数据倾斜解决方案：实际经验中积累的数据倾斜现象的表现，以及处理后的效果总结
+6. troubleshooting：针对写好的spark作业，讲解实际经验中遇到的各种线上报错问题，以及解决方案
+7. 生产环境测试：Hive表
+
+### 3.0 集群启动
+先部署spark集群，确保mysql启动。
+
+对项目打包，打出spark-uba.jar包。
+另外依赖jar包打到lib目录，需要以下两个
+fastjson-1.2.31.jar
+mysql-connector-java-5.1.46.jar
+
+然后编写start.sh启动脚本提交到集群即可。。
+```
+BASEPATH=$(cd `dirname $0`; pwd)
+SPARK_BIN=/data/spark-2.1.1-bin-hadoop2.6
+
+executor_memory=4g
+master_ip=manager
+
+mkdir -p ${BASEPATH}/logs/
+
+${SPARK_BIN}/bin/spark-submit \
+--jars $(echo ${BASEPATH}/lib/*.jar | tr ' ' ',')  \
+--class com.stillcoolme.spark.SparkStart  \
+--total-executor-cores 6 \
+--executor-cores 2 \
+--executor-memory $executor_memory \
+--master spark://$master_ip:7077  ${BASEPATH}/uba-spark-1.0.0.jar \
+>> ${BASEPATH}/logs/spark-uba.log 2>&1
+```
+
+
+
+### 3.1 资源分配
+性能调优的王道：分配更多资源。
+只有资源分配好了，才能给更好的给以后各个调优点打好基础。spark作业能够分配的资源达到了最大后，那么才是考虑去做后面的这些性能调优的点。
+
+问题：
+1、分配哪些资源？ executor、cpu per executor、memory per executor、driver memory
+2、在哪里分配这些资源？
+在我们在生产环境中，提交spark作业时，用的spark-submit shell脚本，里面调整对应的参数
+
+/usr/local/spark/bin/spark-submit \
+--class cn.spark.sparktest.core.WordCountCluster \
+--driver-memory 100m \  配置driver的内存（影响不大）
+--num-executors 3 \  配置executor的数量
+--executor-memory 100m \  配置每个executor的内存大小
+--executor-cores 3 \  配置每个executor的cpu core数量
+/usr/local/SparkTest-0.0.1-SNAPSHOT-jar-with-dependencies.jar \
+
+3、调节到多大，算是最大呢？
+第一种，Spark Standalone，公司集群上，搭建了一套Spark集群，你心里应该清楚每台机器还能够给你使用的，大概有多少内存，多少cpu core；
+那么，设置的时候，就根据这个实际的情况，去调节每个spark作业的资源分配。比如说你的每台机器能够给你使用4G内存，2个cpu core；20台机器；executor，20；4G内存，2个cpu core，平均每个executor。
+
+第二种，Yarn。资源队列。资源调度。应该去查看spark作业，要提交到的资源队列，大概有多少资源？500G内存，100个cpu core；executor，50；10G内存，2个cpu core，平均每个executor。
+
+一个原则，你能使用的资源有多大，就尽量去调节到最大的大小（executor的数量，几十个到上百个不等；executor内存；executor cpu core最大）
+
+4、为什么调节了资源以后，性能可以提升？
+* executor-cores（增加每个executor的cpu core，增加了执行的并行能力）。
+原本20个executor，各有2个cpu core。能够并行40个task。
+现在每个executor的cpu core，增加到了5个。就能够并行执行100个task。
+执行的速度，提升了2.5倍。
+**但不超过服务器的cpu core数，不然会waiting**。
+
+* executor-memory（增加每个executor的内存量）。
+增加了内存量以后，对性能的提升，有两点：
+1、如果需要对RDD进行cache，那么更多的内存，就可以缓存更多的数据，将更少的数据写入磁盘，甚至不写入磁盘。
+2、对于shuffle操作，reduce端，需要内存来存放拉取的数据并进行聚合。如果内存不够，会写入磁盘。如果给executor分配更多内存，减少了磁盘IO，提升了性能。
+3、对于task的执行，会创建很多对象。如果内存比较小，可能会频繁导致JVM堆内存满了，然后频繁GC，垃圾回收，minor GC和full GC。（速度很慢）。内存加大以后，带来更少的GC，垃圾回收，避免了速度变慢，速度变快了。
+**但是不超过分配各每个worker的内存**
+
+* num-executors （增加executor个数)
+如果executor数量比较少，那么，能够并行执行的task数量就比较少，就意味着，我们的Application的并行执行的能力就很弱。
+比如有3个executor，每个executor有2个cpu core，那么同时能够并行执行的task，就是6个。6个执行完以后，再换下一批6个task。
+
+
+问题：
+1. 对spark的架构居然都不太熟悉，一个Master，多个Worker；一个Driver，多个Executor。

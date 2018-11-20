@@ -150,7 +150,7 @@ public class UserVisitSessionAnalyze extends BaseService {
     public JavaPairRDD<String, Row> getFilterSessionid2AggrInfoRDD(
             JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
             JavaPairRDD<String, Row> sessionid2ActionRDD){
-        JavaPairRDD<String, Tuple2<String, Row>> rdd = filteredSessionid2AggrInfoRDD.join(sessionid2ActionRDD);
+        JavaPairRDD<String, Tuple2<String, Row>> rdd = (JavaPairRDD<String, Tuple2<String, Row>>) filteredSessionid2AggrInfoRDD.join(sessionid2ActionRDD);
         JavaPairRDD<String, Row> sessionid2detailRDD = rdd.mapToPair(
                 new PairFunction<Tuple2<String, Tuple2<String, Row>>, String, Row>() {
                     private static final long serialVersionUID = 1L;
@@ -325,7 +325,7 @@ public class UserVisitSessionAnalyze extends BaseService {
 
         // 将session粒度聚合数据，与用户信息进行join
         JavaPairRDD<Long, Tuple2<String, Row>> userid2FullInfoRDD =
-                userid2PartAggrInfoRDD.join(userid2InfoRDD);
+                (JavaPairRDD<Long, Tuple2<String, Row>>) userid2PartAggrInfoRDD.join(userid2InfoRDD);
 
         // 对join起来的数据进行拼接，并且返回<sessionid,fullAggrInfo>格式的数据
         JavaPairRDD<String, String> sessionid2FullAggrInfoRDD = userid2FullInfoRDD.mapToPair(
@@ -694,7 +694,7 @@ public class UserVisitSessionAnalyze extends BaseService {
 
         // 4. 抽取出来的session id 和 sessionAction数据 join 得到 detail数据，然后入库
         JavaPairRDD<String, Tuple2<String, Row>> extractSessionDetailRDD =
-                extractSessionidsRDD.join(sessionid2actionRDD);
+                (JavaPairRDD<String, Tuple2<String, Row>>) extractSessionidsRDD.join(sessionid2actionRDD);
         extractSessionDetailRDD.foreach(
                 new VoidFunction<Tuple2<String,Tuple2<String,Row>>>() {
                     private static final long serialVersionUID = 1L;

@@ -121,7 +121,8 @@ public class UserTop10CategoryAnalyze {
     private static JavaPairRDD<Long, String> joinCategoryAndData(JavaPairRDD<Long, Long> categoryidRDD,
                                                                  JavaPairRDD<Long, Long> clickCategoryId2CountRDD, JavaPairRDD<Long, Long> orderCategoryId2CountRDD, JavaPairRDD<Long, Long> payCategoryId2CountRDD) {
 
-        JavaPairRDD<Long, Tuple2<Long, Optional<Long>>> tmpJoinRDD = categoryidRDD.leftOuterJoin(clickCategoryId2CountRDD);
+        JavaPairRDD<Long, Tuple2<Long, Optional<Long>>> tmpJoinRDD =
+                (JavaPairRDD<Long, Tuple2<Long, Optional<Long>>>) categoryidRDD.leftOuterJoin(clickCategoryId2CountRDD);
         JavaPairRDD<Long, String> tmpMapRDD = tmpJoinRDD.mapToPair(
                 new PairFunction<Tuple2<Long, Tuple2<Long, Optional<Long>>>, Long, String>() {
                     private static final long serialVersionUID = 1L;

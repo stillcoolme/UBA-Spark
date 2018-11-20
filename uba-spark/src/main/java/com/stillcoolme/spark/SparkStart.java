@@ -77,9 +77,9 @@ public class SparkStart {
      */
     private static void mockData(JavaSparkContext sc, SQLContext sqlContext) {
         String runMode = Config.sparkProps.getProperty(Constants.SPARK_MASTER);
-        if(runMode.equals("local")) {
+//        if(runMode.equals("local")) {
             MockData.mock(sc, sqlContext);
-        }
+//        }
     }
 
 

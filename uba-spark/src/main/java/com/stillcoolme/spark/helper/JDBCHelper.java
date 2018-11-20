@@ -3,6 +3,8 @@ package com.stillcoolme.spark.helper;
 import com.stillcoolme.spark.constant.Constants;
 import com.stillcoolme.spark.utils.Config;
 import com.stillcoolme.spark.utils.ConfigurationManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -21,7 +23,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  * 所有这些东西，都需要通过常量来封装和使用
  */
 public class JDBCHelper {
-
+    private static Logger LOG = LoggerFactory.getLogger(JDBCHelper.class);
     //使用阻塞队列
     private LinkedBlockingQueue<Connection> queue=new LinkedBlockingQueue<Connection>();
 
@@ -100,18 +102,11 @@ public class JDBCHelper {
             String url = null;
             String user = null;
             String password = null;
-
-            if(runMode.equals("local")) {
-                url = ConfigurationManager.getProperty(Constants.JDBC_URL);
-                user = ConfigurationManager.getProperty(Constants.JDBC_USER);
-                password = ConfigurationManager.getProperty(Constants.JDBC_PASSWORD);
-            } else {
-                url = ConfigurationManager.getProperty(Constants.JDBC_URL_PROD);
-                user = ConfigurationManager.getProperty(Constants.JDBC_USER_PROD);
-                password = ConfigurationManager.getProperty(Constants.JDBC_PASSWORD_PROD);
-            }
-
+            url = ConfigurationManager.getProperty(Constants.JDBC_URL);
+            user = ConfigurationManager.getProperty(Constants.JDBC_USER);
+            password = ConfigurationManager.getProperty(Constants.JDBC_PASSWORD);
             try {
+                LOG.warn( url + " " + user + " " + password);
                 Connection conn = DriverManager.getConnection(url, user, password);
                 datasource.push(conn);
             } catch (Exception e) {
