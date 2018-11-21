@@ -26,10 +26,12 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.storage.StorageLevel;
 import org.apache.spark.util.AccumulatorV2;
+import org.glassfish.jersey.server.Broadcaster;
 import scala.Tuple2;
 
 import java.util.ArrayList;
@@ -658,6 +660,8 @@ public class UserVisitSessionAnalyze extends BaseService {
 
         // 执行groupByKey算子，得到 <dateHour, list(aggrInfo)>
         JavaPairRDD<String, Iterable<String>> time2sessionsRDD = time2sessionidRDD.groupByKey();
+        // 广播大变量
+        final Broadcast<Map<String, List>> broadcastVar = javaSparkContext.broadcast(session2extractlistMap);
 
         // 3. flatMap算子遍历每小时的session数据，<dateHour, list(aggrInfo)>格式
         // 如果发现某个session恰巧在我们指定的这天这小时的随机抽取索引上则抽取该session，直接写入MySQL的random_extract_session表
@@ -669,8 +673,9 @@ public class UserVisitSessionAnalyze extends BaseService {
                             Tuple2<String, Iterable<String>> tuple) throws Exception {
                         // yyyy-MM-DD_hh
                         String datehour = tuple._1;
-
-                        List extractIndexList = session2extractlistMap.get(datehour);
+                        // 使用广播变量
+                        Map<String, List> broadcastMap = broadcastVar.value();
+                        List extractIndexList = broadcastMap.get(datehour);
                         Iterator<String> iterator = tuple._2.iterator();
                         List<Tuple2<String, String>> extractSessionids = new ArrayList<Tuple2<String, String>>();
                         ISessionRandomExtractDao sessionRandomExtractDao = DaoFactory.getSessionRandomExtractDao();

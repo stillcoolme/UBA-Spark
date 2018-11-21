@@ -3,6 +3,7 @@ package com.stillcoolme.spark;
 import com.stillcoolme.spark.constant.Constants;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.service.BaseService;
+import com.stillcoolme.spark.service.session.CategorySortKey;
 import com.stillcoolme.spark.service.session.UserVisitSessionAnalyze;
 import com.stillcoolme.spark.utils.Config;
 import com.stillcoolme.spark.utils.ConfigurationManager;
@@ -30,8 +31,12 @@ public class SparkStart {
         appName = String.format("%s-%s", appName, DateUtils.formatDateTime(new Date()));
         String runMode = Config.sparkProps.getProperty(Constants.SPARK_MASTER);
 
-        SparkConf conf = new SparkConf().setMaster(runMode).setAppName(appName);
-        conf.set("spark.default.parallelism", "20");
+        SparkConf conf = new SparkConf()
+                .setMaster(runMode)
+                .setAppName(appName)
+                .set("spark.default.parallelism", "20")
+                .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+                .registerKryoClasses(new Class[]{CategorySortKey.class});  // 二次排序自定义的类要实现kyro序列化要注册
 
         BaseService.sparkSession = SparkSession.builder().config(conf).getOrCreate();
         BaseService.javaSparkContext = new JavaSparkContext(BaseService.sparkSession.sparkContext());

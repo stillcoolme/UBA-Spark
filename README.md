@@ -275,7 +275,6 @@ ${SPARK_BIN}/bin/spark-submit \
 性能调优的王道：分配更多资源。
 只有资源分配好了，才能给更好的给以后各个调优点打好基础。spark作业能够分配的资源达到了最大后，那么才是考虑去做后面的这些性能调优的点。
 
-问题：
 1、分配哪些资源？ executor、cpu per executor、memory per executor、driver memory
 2、在哪里分配这些资源？
 在我们在生产环境中，提交spark作业时，用的spark-submit shell脚本，里面调整对应的参数
@@ -314,6 +313,108 @@ ${SPARK_BIN}/bin/spark-submit \
 如果executor数量比较少，那么，能够并行执行的task数量就比较少，就意味着，我们的Application的并行执行的能力就很弱。
 比如有3个executor，每个executor有2个cpu core，那么同时能够并行执行的task，就是6个。6个执行完以后，再换下一批6个task。
 
-
 问题：
 1. 对spark的架构居然都不太熟悉，一个Master，多个Worker；一个Driver，多个Executor。
+
+### 3.2 调节并行度
+
+并行度：Spark作业中会拆成多个stage，各个stage的task数量，也就代表了job在各个阶段（stage）的并行度。（job划分成stage是根据宽窄依赖来区分的）
+**spark自己的算法给task选择Executor，Execuotr进程里面包含着task线程**。
+举例（wordCount）：
+    map阶段：每个task根据去找到自己需要的数据写到文件去处理。生成的文件一定是存放相同的key对应的values，相同key的values一定是进入同一个文件。
+    reduce阶段：每个stage1的task，会去上面生成的文件拉取数据；拉取到的数据，一定是相同key对应的数据。对相同的key，对应的values，才能去执行我们自定义的function操作（_ + _）
+
+
+假设资源调到上限了，如果不调节并行度，导致并行度过低，会怎么样？
+
+假设task设置了100个task。有50个executor，每个executor有3个cpu core。
+则Application任何一个stage运行的时候，都有总数在150个cpu core，可以并行运行。
+但是共有100个task，平均分配一下，每个executor分配到2个task。
+那么同时在运行的task，只有100个，每个executor只会并行运行2个task。每个executor剩下的一个cpu core，并行度没有与资源相匹配，就浪费掉了。
+
+合理的并行度的设置，应该要设置到可以完全合理的利用你的集群资源；
+比如上面的例子，总共集群有150个cpu core，可以并行运行150个task。
+即可以同时并行运行，还可以让每个task要处理的数据量变少。
+最终，就是提升你的整个Spark作业的性能和运行速度。
+
+**官方是推荐，task数量，设置成spark application总cpu core数量的2~3倍，比如150个cpu core，基本要设置task数量为300~500；**
+
+因为有些task会运行的快一点，比如50s就完了，有些task，可能会慢一点，要1分半才运行完，如果task数量设置成cpu core总数的2~3倍，那么一个task运行完了以后，另一个task马上可以补上来，就尽量不让cpu core空闲，尽量提升spark作业运行的效率和速度，提升性能。
+
+3、如何设置一个Spark Application的并行度？
+SparkConf conf = new SparkConf()
+  .set("spark.default.parallelism", "500")
+
+“重剑无锋”：真正有分量的一些技术和点，其实都是看起来比较平凡，看起来没有那么“炫酷”，但是其实是你每次写完一个spark作业，进入性能调优阶段的时候，应该优先调节的事情，就是这些。
+
+
+### 3.3重构RDD架构以及RDD持久化
+
+第一，RDD架构重构与优化
+尽量去复用RDD，差不多的RDD，可以抽取称为一个共同的RDD，供后面的RDD计算时，反复使用。
+第二，公共RDD一定要实现持久化
+持久化，也就是说，将RDD的数据缓存到内存中/磁盘中，（BlockManager），以后无论对这个RDD做多少次计算，那么都是直接取这个RDD的持久化的数据，比如从内存中或者磁盘中，直接提取一份数据。
+
+第三，持久化是可以进行序列化的
+如果正常将数据持久化在内存中，可能会导致内存的占用过大，导致OOM。
+
+当纯内存无法支撑公共RDD数据完全存放的时候，就优先考虑，使用序列化的方式在纯内存中存储。将RDD的每个partition的数据，序列化成一个大的字节数组，就一个对象；序列化后，大大减少内存的空间占用。
+序列化的方式，唯一的缺点就是，在获取数据的时候，需要反序列化。
+
+如果序列化纯内存方式，还是导致OOM，内存溢出；就只能考虑磁盘的方式，内存+磁盘的普通方式（无序列化）。
+内存+磁盘，序列化
+
+第四，为了数据的高可靠性，而且内存充足，可以使用双副本机制，进行持久化
+持久化的双副本机制，持久化后的一个副本，因为机器宕机了，副本丢了，就还是得重新计算一次；持久化的每个数据单元，存储一份副本，放在其他节点上面；从而进行容错；一个副本丢了，不用重新计算，还可以使用另外一份副本。这种方式，仅仅针对你的内存资源极度充足。
+
+
+### 3.4 大变量进行广播， 使用Kryo序列化
+
+session分析模块中随机抽取部分，time2sessionsRDD.flatMapToPair()，取session2extractlistMap中对应时间的list。
+task执行的算子flatMapToPair算子，**使用了外部的变量session2extractlistMap**，每个task都要通过网络的传输获取一份变量的副本。占网络资源占内存。
+所以引入：
+广播变量，在driver上会有一份初始的副本。然后给每个节点的executor一份副本。就可以让变量产生的副本大大减少。
+
+广播变量初始的时候，就在Drvier上有一份副本。
+task在运行的时候，想要使用广播变量中的数据，此时首先会在自己本地的Executor对应的BlockManager中（负责管理某个Executor对应的内存和磁盘上的数据），尝试获取变量副本；
+如果本地没有，那么就从Driver远程拉取变量副本，并保存在本地的BlockManager中；
+此后这个executor上的task，都会直接使用本地的BlockManager中的副本。
+BlockManager除了从driver上拉取，也可能从其他节点的BlockManager上拉取变量副本，举例越近越好。
+
+==============
+
+进一步优化，优化序列化格式。
+默认情况下，Spark内部是使用Java的对象输入输出流序列化机制，ObjectOutputStream / ObjectInputStream
+这种默认序列化机制的好处在于，处理起来比较方便；也不需要我们手动去做什么事情，只是，你在算子里面使用的变量，必须是实现Serializable接口的，可序列化即可。但是默认的序列化机制的效率不高速度慢；序列化数据占用的内存空间大。
+
+Spark支持使用Kryo序列化机制。
+Kryo序列化机制，比默认的Java序列化机制，速度要快，序列化后的数据要更小，大概是Java序列化机制的1/10。让网络传输的数据变少；耗费的内存资源大大减少。
+
+Kryo序列化机制，一旦启用以后，会生效的几个地方：
+1、算子函数中使用到的外部变量
+2、持久化RDD时进行序列化，StorageLevel.MEMORY_ONLY_SER
+3、shuffle
+
+第一步：```SparkConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")```
+第二步，注册你使用到的，需要通过Kryo序列化的自定义类。
+```SparkConf.registerKryoClasses(new Class[]{CategorySortKey.class});
+```
+Kryo要求，如果要达到它的最佳性能的话，那么就一定要注册你自定义的类（比如，你的算子函数中使用到了外部自定义类型的对象变量，这时，就要求必须注册你的类，否则Kryo达不到最佳性能）。
+
+============
+
+fastutil优化
+
+fastutil是扩展了Java标准集合框架（Map、List、Set；HashMap、ArrayList、HashSet）的类库，提供了特殊类型的map、set、list和queue；能够提供更小的内存占用，更快的存取速度。
+fastutil的每一种集合类型，都实现了对应的Java中的标准接口（比如fastutil的map，实现了Java的Map接口），因此可以直接放入已有系统的任何代码中。
+fastutil还提供了一些JDK标准类库中没有的额外功能（比如双向迭代器）。
+fastutil除了对象和原始类型为元素的集合，fastutil也提供引用类型的支持，但是对引用类型是使用等于号（=）进行比较的，而不是equals()方法。
+
+Spark中应用fastutil的场景：
+1、如果算子函数使用了外部变量是某种比较大的集合，那么可以考虑使用fastutil改写外部变量，首先从源头上就减少内存的占用，通过广播变量进一步减少内存占用，再通过Kryo序列化类库进一步减少内存占用。
+2、在你的算子函数里，也就是task要执行的计算逻辑里面，要创建比较大的Map、List等集合，可以考虑将这些集合类型使用fastutil类库重写，减少task创建出来的集合类型的内存占用。
+
+fastutil的使用，在pom.xml中引用fastutil的包
+```List<Integer> => IntList
+```
+基本都是类似于IntList的格式，前缀就是集合的元素类型；特殊的就是Map，Int2IntMap，代表了key-value映射的元素类型。
