@@ -36,7 +36,9 @@ public class SparkStart {
                 .setAppName(appName)
                 .set("spark.default.parallelism", "20")
                 .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-                .registerKryoClasses(new Class[]{CategorySortKey.class});  // 二次排序自定义的类要实现kyro序列化要注册
+                .registerKryoClasses(new Class[]{CategorySortKey.class})  // 二次排序自定义的类要实现kyro序列化要注册
+                .set("spark.locality.wait", "5")    // 调节数据本地化等待时长
+                .set("spark.shuffle.consolidateFiles", "true");     // shuffle调优：合并map端输出文件
 
         BaseService.sparkSession = SparkSession.builder().config(conf).getOrCreate();
         BaseService.javaSparkContext = new JavaSparkContext(BaseService.sparkSession.sparkContext());

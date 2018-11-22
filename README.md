@@ -241,6 +241,20 @@ session随机抽取：按每天的每个小时的session数量，占当天sessio
 6. troubleshooting：针对写好的spark作业，讲解实际经验中遇到的各种线上报错问题，以及解决方案
 7. 生产环境测试：Hive表
 
+调优，你要对spark的作业流程清楚：
+* Driver到executor的结构；
+```
+Master: Driver
+    |-- Worker: Executor
+            |-- job
+                 |-- stage
+                       |-- Task Task 
+```
+* 作业划分为task分到executor上（一个cpu core执行一个task）；
+* 一个Stage内，最终的RDD有多少个partition，就会产生多少个task
+* BlockManager负责Executor，task的数据管理，task来它这里拿数据；
+
+
 ### 3.0 集群启动
 先部署spark集群，确保mysql启动。
 
@@ -351,7 +365,7 @@ SparkConf conf = new SparkConf()
 ### 3.3重构RDD架构以及RDD持久化
 
 第一，RDD架构重构与优化
-尽量去复用RDD，差不多的RDD，可以抽取称为一个共同的RDD，供后面的RDD计算时，反复使用。
+尽量去复用RDD，差不多的RDD抽取为一个共同的RDD，供后面的RDD计算时，反复使用。
 第二，公共RDD一定要实现持久化
 持久化，也就是说，将RDD的数据缓存到内存中/磁盘中，（BlockManager），以后无论对这个RDD做多少次计算，那么都是直接取这个RDD的持久化的数据，比如从内存中或者磁盘中，直接提取一份数据。
 
@@ -368,7 +382,7 @@ SparkConf conf = new SparkConf()
 持久化的双副本机制，持久化后的一个副本，因为机器宕机了，副本丢了，就还是得重新计算一次；持久化的每个数据单元，存储一份副本，放在其他节点上面；从而进行容错；一个副本丢了，不用重新计算，还可以使用另外一份副本。这种方式，仅仅针对你的内存资源极度充足。
 
 
-### 3.4 大变量进行广播， 使用Kryo序列化
+### 3.4 大变量进行广播， 使用Kryo序列化， 本地化等待时间
 
 session分析模块中随机抽取部分，time2sessionsRDD.flatMapToPair()，取session2extractlistMap中对应时间的list。
 task执行的算子flatMapToPair算子，**使用了外部的变量session2extractlistMap**，每个task都要通过网络的传输获取一份变量的副本。占网络资源占内存。
@@ -418,3 +432,207 @@ fastutil的使用，在pom.xml中引用fastutil的包
 ```List<Integer> => IntList
 ```
 基本都是类似于IntList的格式，前缀就是集合的元素类型；特殊的就是Map，Int2IntMap，代表了key-value映射的元素类型。
+
+==============
+
+调节数据本地化等待时长
+
+背景：Driver对Application的每一个stage的task，进行分配之前，都会计算出每个task要计算的是哪个分片数据，RDD的某个partition。分配算法会希望每个task正好分配到它要计算的数据所在的节点。
+但是可能某task要分配过去的那个节点的计算资源和计算能力都满了。**这种时候，Spark会等待一段时间**，默认情况下是3s，**到最后实在是等待不了了，就会选择一个比较差的本地化级别**，将task分配到靠它要计算的数据所在节点，比较近的一个节点，然后进行计算。
+task会通过其所在节点的BlockManager来获取数据，BlockManager发现自己本地没有数据，会通过一个getRemote()方法，通过TransferService（网络数据传输组件）从数据所在节点的BlockManager中，获取数据，通过网络传输回task所在节点。
+
+我们调节等待时长就是让spark再等待多一下，不要到低一级的本地化级别。
+
+**怎么调节spark.locality.wait**
+spark.locality.wait，默认是3s；
+```
+spark.locality.wait.process
+spark.locality.wait.node
+spark.locality.wait.rack
+
+new SparkConf()
+  .set("spark.locality.wait", "10")
+```
+
+先用client模式，在本地就直接可以看到比较全的日志。
+观察日志，spark作业的运行日志显示，观察大部分task的数据本地化级别。starting task。PROCESS LOCAL、NODE LOCAL。
+如果大多都是PROCESS_LOCAL，那就不用调节了。
+如果是发现，好多的级别都是NODE_LOCAL、ANY，那么最好就去调节一下数据本地化的等待时长。
+看看大部分的task的本地化级别有没有提升；看看，整个spark作业的运行时间有没有缩短。如果spark作业的运行时间反而增加了，那就还是不要调节了。
+
+**本地化级别**
+* PROCESS_LOCAL：进程本地化，代码和数据在同一个进程中，也就是在同一个executor中；计算数据的task由executor执行，数据在executor的BlockManager中；性能最好
+* NODE_LOCAL：节点本地化，代码和数据在同一个节点中；比如说，数据作为一个HDFS block块，就在节点上，而task在节点上某个executor中运行；或者是，数据和task在一个节点上的不同executor中；数据需要在进程间进行传输
+* NO_PREF：对于task来说，数据从哪里获取都一样，没有好坏之分
+* RACK_LOCAL：机架本地化，数据和task在一个机架的两个节点上；数据需要通过网络在节点之间进行传输
+* ANY：数据和task可能在集群中的任何地方，而且不在一个机架中，性能最差
+
+
+
+### 3.5 JVM调优
+
+**降低cache操作的内存占比**
+
+每一次放对象的时候，都是放入eden区域，和其中一个survivor1 区域；另外一个survivor2 区域是空闲的。
+
+当eden区域和一个survivor区域放满了以后，就会触发minor gc。
+如果你的JVM内存不够大的话，可能导致频繁的年轻代OOM，频繁的进行minor gc。
+频繁的minor gc会导致短时间内，有些存活的对象，多次垃圾回收都没有回收掉。会导致这种短声明周期对象，年龄过大，垃圾回收次数太多还没有回收到。
+
+minor gc后会将存活下来的对象，放入之前空闲的那一个survivor区域中。
+这里可能会出现一个问题。
+默认eden、survior1和survivor2的内存占比是8:1:1。问题是，如果存活下来的对象是1.5，一个survivor区域放不下。
+此时就可能通过JVM的担保机制，将多余的对象，直接放入老年代了。导致老年代囤积一大堆，短生命周期的，本来应该在年轻代中的，可能马上就要被回收掉的对象。
+
+老年代有许多对象可能导致老年代频繁满溢。频繁进行full gc。
+full gc由于这个算法的设计，考虑老年代中的对象数量很少，满溢进行full gc的频率应该很少，因此采取了不太复杂，但是耗费性能和时间的垃圾回收算法。
+
+内存不充足的时候，问题：
+1、频繁minor gc，也会导致频繁spark停止工作
+2、老年代囤积大量活跃对象（短生命周期的对象），导致频繁full gc，导致jvm的工作线程停止工作，spark停止工作。等着垃圾回收结束。
+
+
+spark中，堆内存又被划分成了两块，一块儿是专门用来给RDD的cache、persist操作进行RDD数据缓存用的；另外一块，用来给spark算子函数的运行使用的，存放函数中自己创建的对象。
+默认情况下，给RDD cache操作的内存占比是60%。但是如果某些情况下，task算子函数中创建的对象过多，然后内存又不太大，导致了频繁的minor gc，甚至频繁full gc，导致spark频繁的停止工作。性能影响会很大。
+
+针对上述这种情况，大家可以在之前我们讲过的那个spark ui。yarn去运行的话，那么就通过yarn的界面，去查看你的spark作业的运行统计，很简单，大家一层一层点击进去就好。可以看到每个stage的运行情况，包括每个task的运行时间、gc时间等等。如果发现gc太频繁，时间太长。此时就可以适当调价这个比例。
+
+降低cache操作的内存占比，大不了用persist操作，选择将一部分缓存的RDD数据写入磁盘，或者序列化方式，配合Kryo序列化类，减少RDD缓存的内存占用；降低cache操作内存占比；对应的，算子函数的内存占比就提升了。
+一句话，让task执行算子函数时，有更多的内存可以使用。
+spark-submit脚本里面，去用--conf的方式，去添加配置：
+```
+--conf spark.storage.memoryFraction，0.6 -> 0.5 -> 0.4 -> 0.2
+--conf spark.shuffle.memoryFraction=0.3
+```
+
+
+====================
+
+**调节executor堆外内存**
+
+executor堆外内存
+
+有时候，如果你的spark作业处理的数据量特别特别大；然后spark作业一运行，时不时的报错，shuffle file cannot find，executor、task lost，out of memory（内存溢出）；
+
+可能是说executor的堆外内存不太够用，导致executor在运行的过程中会内存溢出；
+然后导致后续的stage的task在运行的时候，可能要从一些executor中去拉取shuffle map output文件，但是executor可能已经挂掉了，关联的Block manager也没有了；spark作业彻底崩溃。
+
+上述情况下，就可以去考虑调节一下executor的堆外内存。
+避免掉某些JVM OOM的异常问题。
+此外，堆外内存调节的比较大的时候，对于性能来说，也会带来一定的提升。
+
+
+spark-submit脚本里面，去用--conf的方式，去添加基于yarn的提交模式配置；
+```
+--conf spark.yarn.executor.memoryOverhead=2048
+```
+默认情况下，这个堆外内存上限大概是300多M；真正处理大数据的时候，这里都会出现问题，导致spark作业反复崩溃，无法运行；此时就会去调节这个参数到至少1G（1024M），甚至说2G、4G。
+
+
+========================
+
+**调节连接等待时长**
+
+我们知道 Executor，优先从自己本地关联的BlockManager中获取某份数据。
+如果本地block manager没有的话，那么会通过TransferService，去远程连接其他节点上executor的block manager去获取。
+正好碰到那个exeuctor的JVM在垃圾回收，就会没有响应，无法建立网络连接；
+spark默认的网络连接的超时时长，是60s；
+就会出现某某file。一串file id。uuid（dsfsfd-2342vs--sdf--sdfsd）。not found。file lost。
+报错几次，几次都拉取不到数据的话，可能会导致spark作业的崩溃。也可能会导致DAGScheduler，反复提交几次stage。TaskScheduler，反复提交几次task。大大延长我们的spark作业的运行时间。
+
+可以考虑在spark-submit脚本里面，调节连接的超时时长：
+```
+--conf spark.core.connection.ack.wait.timeout=300
+```
+
+
+
+### 3.6 Suffle调优
+
+#### 3.6.1 shuffle流程
+shuffle，一定是分为两个stage来完成的。因为这其实是个逆向的过程，不是stage决定shuffle，是shuffle决定stage。
+在某个action触发job的时候，DAGScheduler会负责划分job为多个stage。划分的依据，就是如果发现有会触发shuffle操作的算子（reduceByKey）。
+就将这个操作的前半部分，以及之前所有的RDD和transformation操作，划分为一个stage；
+shuffle操作的后半部分，以及后面的，直到action为止的RDD和transformation操作，划分为另外一个stage。
+
+每一个shuffle的前半部分stage的task，**每个task**都会**创建下一个stage的task数量相同的文件**，比如下一个stage会有10个task，那么当前stage每个task都会创建10份文件；会将同一个key对应的values，写入同一个文件中的；
+不同节点上的task，也一定会将同一个key对应的values，写入下一个stage的同一个task对应的文件中。
+
+shuffle的后半部分stage的task，每个task都会从各个节点上的task写的属于自己的那一份文件中，拉取key, value对；
+然后task会有一个内存缓冲区，然后会用HashMap，进行key, values的汇聚；
+task会用我们自己定义的聚合函数reduceByKey(_+_)，把所有values进行一对一的累加；聚合出来最终的值。
+
+
+#### 3.6.2 合并map端输出文件
+
+```sparConf().set("spark.shuffle.consolidateFiles", "true")
+```
+
+开启了map端输出文件的合并机制之后：
+
+第一个stage，同时运行cpu core个task，比如cpu core是2个，并行运行2个task；每个task都创建下一个stage的task数量个文件；
+
+第一个stage，并行运行的2个task执行完以后；就会执行另外两个task；**另外2个task不会再重新创建输出文件；而是复用之前的task创建的map端输出文件，将数据写入上一批task的输出文件中**。
+
+第二个stage，task在拉取数据的时候，就不会去拉取上一个stage每一个task为自己创建的那份输出文件了；而是拉取少量的输出文件，每个输出文件中，可能包含了多个task给自己的map端输出。
+
+
+
+#### 3.6.3 调节map端内存缓冲与reduce端内存占比
+深入一下shuffle原理：
+shuffle的map task：
+输出到磁盘文件的时候，统一都会先写入每个task自己关联的一个内存缓冲区。
+这个缓冲区大小，默认是32kb。当**内存缓冲区满溢之后，会进行spill溢写操作到磁盘文件中去**。数据量比较大的情况下可能导致多次溢写。
+
+shuffle的reduce端task：
+在拉取到数据之后，会用hashmap的数据格式，来对各个key对应的values进行汇聚的时候。
+使用的就是自己对应的executor的内存，executor（jvm进程，堆），默认executor内存中划分给reduce task进行聚合的比例，是0.2。要是拉取过来的数据很多，那么在内存中，放不下；就将在内存放不下的数据，都spill（溢写）到磁盘文件中去。数据大的时候磁盘上溢写的数据量越大，后面在进行聚合操作的时候，很可能会多次读取磁盘中的数据，进行聚合。
+
+**怎么调节？**
+看Spark UI，shuffle的磁盘读写的数据量很大，就意味着最好调节一些shuffle的参数。进行调优。
+```
+set(spark.shuffle.file.buffer，64)      // 默认32k  每次扩大一倍，看看效果。
+set(spark.shuffle.memoryFraction，0.2)  // 每次提高0.1，看看效果。
+```
+
+很多资料、网上视频，都会说，这两个参数，是调节shuffle性能的不二选择，很有效果的样子，实际上，不是这样的。以实际的生产经验来说，这两个参数没有那么重要，往往来说，shuffle的性能不是因为这方面的原因导致的。
+
+
+### 3.6.4 HashShuffleManager与SortShuffleManager
+
+**上面我们所讲shuffle原理是指HashShuffleManager**，其实是一种比较老旧的shuffle manager，从spark 1.2.x版本以后，默认的是SortShuffleManager。
+之前讲解的一些调优的点，比如consolidateFiles机制、map端缓冲、reduce端内存占比。这些对任何shuffle manager都是有用的。
+
+在spark 1.5.x后，又出来了一种tungsten-sort shuffleMnager。效果跟sort shuffle manager是差不多的。
+唯一的不同之处在于，钨丝manager，是使用了自己实现的一套内存管理机制，性能上有很大的提升， 而且可以避免shuffle过程中产生的大量的OOM，GC，等等内存相关的异常。
+
+SortShuffleManager与HashShuffleManager两点不同：
+
+1、SortShuffleManager会对每个reduce task要处理的数据，进行排序（默认的）。
+2、SortShuffleManager会避免像HashShuffleManager那样，默认就去创建多份磁盘文件。一个task，只会写入一个磁盘文件，不同reduce task的数据，用offset来划分界定。
+
+
+**hash、sort、tungsten-sort。如何来选择？**
+1、需不需要数据默认就让spark给你进行排序？就好像mapreduce，默认就是有按照key的排序。如果不需要的话，其实还是建议搭建就使用最基本的HashShuffleManager，因为最开始就是考虑的是不排序，换取高性能；
+
+2、什么时候需要用sort shuffle manager？如果你需要你的那些数据按key排序了，那么就选择这种吧，而且要注意，reduce task的数量应该是超过200的，这样sort、merge（多个文件合并成一个）的机制，才能生效把。但是这里要注意，你一定要自己考量一下，有没有必要在shuffle的过程中，就做这个事情，毕竟对性能是有影响的。
+
+3、如果你不需要排序，而且你希望你的每个task输出的文件最终是会合并成一份的，你自己认为可以减少性能开销；可以去调节bypassMergeThreshold这个阈值，比如你的reduce task数量是500，默认阈值是200，所以默认还是会进行sort和直接merge的；可以将阈值调节成550，不会进行sort，按照hash的做法，每个reduce task创建一份输出文件，最后合并成一份文件。（一定要提醒大家，这个参数，其实我们通常不会在生产环境里去使用，也没有经过验证说，这样的方式，到底有多少性能的提升）
+
+4、如果你想选用sort based shuffle manager，而且你们公司的spark版本比较高，是1.5.x版本的，那么可以考虑去尝试使用tungsten-sort shuffle manager。看看性能的提升与稳定性怎么样。（唉，开源出来的项目都是落后了快五年了的）
+
+总结：
+1、在生产环境中，不建议大家贸然使用第三点和第四点：
+2、如果你不想要你的数据在shuffle时排序，那么就自己设置一下，用hash shuffle manager。
+3、如果你的确是需要你的数据在shuffle时进行排序的，那么就默认不用动，默认就是sort shuffle manager；或者是什么？如果你压根儿不care是否排序这个事儿，那么就默认让他就是sort的。调节一些其他的参数（consolidation机制）。（80%，都是用这种）
+
+```
+new SparkConf().set("spark.shuffle.manager", "hash")  // hash、tungsten-sort、默认为sort
+new SparkConf().set("spark.shuffle.sort.bypassMergeThreshold", "550")   // 默认200
+```
+当reduce task数量少于等于200；map task创建的输出文件小于等于200的；会将所有的输出文件合并为一份文件。且不进行sort排序，节省了性能开销。
+
+
+
+
+
