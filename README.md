@@ -251,7 +251,7 @@ Master: Driver
                        |-- Task Task 
 ```
 * 作业划分为task分到executor上（一个cpu core执行一个task）；
-* 一个Stage内，最终的RDD有多少个partition，就会产生多少个task
+* 一个Stage内，最终的RDD有多少个partition，就会产生多少个task；一个task处理一个partition的数据；
 * BlockManager负责Executor，task的数据管理，task来它这里拿数据；
 
 
@@ -634,5 +634,39 @@ new SparkConf().set("spark.shuffle.sort.bypassMergeThreshold", "550")   // 默�
 
 
 
+### 3.7 算子调优
 
+#### 3.7.1 MapPartitions提升Map类操作性能
+普通的mapToPair，当一个partition中有1万条数据，function要执行和计算1万次。
+但是，使用MapPartitions操作之后，一个task仅仅会执行一次function，function一次接收所有的partition数据。只要执行一次就可以了，性能比较高。
+但是MapPartitions操作，对于大量数据来说，一次传入一个function以后，那么可能一下子内存不够，但是又没有办法去腾出内存空间来，可能就OOM。
+
+在项目中，自己先去估算一下RDD的数据量，以及每个partition的量，还有自己分配给每个executor的内存资源。看看一下子内存容纳所有的partition数据，行不行。如果行，可以试一下，能跑通就好。性能肯定是有提升的。
+
+#### 3.7.2 使用coalesce减少分区数量
+RDD这种filter之后，RDD中的每个partition的数据量，可能都不太一样了。
+问题：
+1、每个partition数据量变少了，但是在后面进行处理的时候，还跟partition数量一样数量的task，来进行处理；有点浪费task计算资源。
+2、每个partition的数据量不一样，会导致后面的每个task处理每个partition的时候，每个task要处理的数据量就不同，处理速度相差大，导致数据倾斜。。。。
+
+针对上述的两个问题，能够怎么解决呢？
+
+1、针对第一个问题，希望可以进行partition的压缩吧，因为数据量变少了，那么partition其实也完全可以对应的变少。比如原来是4个partition，现在完全可以变成2个partition。那么就只要用后面的2个task来处理即可。就不会造成task计算资源的浪费。
+
+2、针对第二个问题，其实解决方案跟第一个问题是一样的；也是去压缩partition，尽量让每个partition的数据量差不多。那么这样的话，后面的task分配到的partition的数据量也就差不多。不会造成有的task运行速度特别慢，有的task运行速度特别快。避免了数据倾斜的问题。
+
+主要就是用于在filter操作之后，添加coalesce算子，针对每个partition的数据量各不相同的情况，来压缩partition的数量。减少partition的数量，而且让每个partition的数据量都尽量均匀紧凑。
+
+
+### 3.7.3 foreachPartition优化写数据库性能
+默认的foreach的性能缺陷在哪里？
+1. 对于每条数据，都要单独去调用一次function，task为每个数据都要去执行一次function函数。如果100万条数据，（一个partition），调用100万次。性能比较差。
+2. 浪费数据库连接资源。
+
+在生产环境中，都使用foreachPartition来写数据库
+1、对于我们写的function函数，就调用一次，一次传入一个partition所有的数据，但是太多也容易OOM。
+2、主要创建或者获取一个数据库连接就可以
+3、只要向数据库发送一次SQL语句和多组参数即可
+
+### 3.7.4 
 

@@ -123,12 +123,14 @@ public class UserTop10CategoryAnalyze {
 
         JavaPairRDD<Long, Tuple2<Long, Optional<Long>>> tmpJoinRDD =
                 (JavaPairRDD<Long, Tuple2<Long, Optional<Long>>>) categoryidRDD.leftOuterJoin(clickCategoryId2CountRDD);
-        JavaPairRDD<Long, String> tmpMapRDD = tmpJoinRDD.mapToPair(
-                new PairFunction<Tuple2<Long, Tuple2<Long, Optional<Long>>>, Long, String>() {
-                    private static final long serialVersionUID = 1L;
-
-                    @Override
-                    public Tuple2<Long, String> call(Tuple2<Long, Tuple2<Long, Optional<Long>>> tuple) throws Exception {
+        JavaPairRDD<Long, String> tmpMapRDD = tmpJoinRDD.mapPartitionsToPair(
+            new PairFlatMapFunction<Iterator<Tuple2<Long, Tuple2<Long, Optional<Long>>>>, Long, String>() {
+                private static final long serialVersionUID = 1L;
+                @Override
+                public Iterator<Tuple2<Long, String>> call(Iterator<Tuple2<Long, Tuple2<Long, Optional<Long>>>> tuple2Iterator) throws Exception {
+                    List<Tuple2<Long, String>> list = new ArrayList();
+                    while (tuple2Iterator.hasNext()){
+                        Tuple2<Long, Tuple2<Long, Optional<Long>>> tuple = tuple2Iterator.next();
                         Long categoryId = tuple._1;
                         Optional<Long> optional = tuple._2._2;
                         long clickCount = 0L;
@@ -136,17 +138,21 @@ public class UserTop10CategoryAnalyze {
                             clickCount = optional.get();
                         }
                         String value = Constants.FIELD_CATEGORY_ID + Constants.REGEX_EQUAL + categoryId + "|" + Constants.FIELD_CLICK_COUNT + Constants.REGEX_EQUAL + clickCount;
-                        return new Tuple2<Long, String>(categoryId, value);
+                        list.add(new Tuple2<Long, String>(categoryId, value));
                     }
+                    return list.iterator();
                 }
+            }
         );
 
-        tmpMapRDD = tmpMapRDD.leftOuterJoin(orderCategoryId2CountRDD).mapToPair(
-                new PairFunction<Tuple2<Long, Tuple2<String, Optional<Long>>>, Long, String>() {
-                    private static final long serialVersionUID = 1L;
-
-                    @Override
-                    public Tuple2<Long, String> call(Tuple2<Long, Tuple2<String, Optional<Long>>> tuple) throws Exception {
+        tmpMapRDD = tmpMapRDD.leftOuterJoin(orderCategoryId2CountRDD).mapPartitionsToPair(
+            new PairFlatMapFunction<Iterator<Tuple2<Long, Tuple2<String, Optional<Long>>>>, Long, String>() {
+                private static final long serialVersionUID = 1L;
+                @Override
+                public Iterator<Tuple2<Long, String>> call(Iterator<Tuple2<Long, Tuple2<String, Optional<Long>>>> tuple2Iterator) throws Exception {
+                    List<Tuple2<Long, String>> list = new ArrayList();
+                    while (tuple2Iterator.hasNext()){
+                        Tuple2<Long, Tuple2<String, Optional<Long>>> tuple = tuple2Iterator.next();
                         Long categoryid = tuple._1;
                         String value = tuple._2._1;
                         Optional<Long> optional = tuple._2._2;
@@ -156,34 +162,34 @@ public class UserTop10CategoryAnalyze {
                             orderCount = optional.get();
                         }
                         value = value + "|" + Constants.FIELD_ORDER_COUNT + Constants.REGEX_EQUAL + orderCount;
-
-                        return new Tuple2<Long, String>(categoryid, value);
+                        list.add(new Tuple2<Long, String>(categoryid, value));
                     }
+                    return list.iterator();
                 }
+            }
         );
-
-        tmpMapRDD = tmpMapRDD.leftOuterJoin(payCategoryId2CountRDD).mapToPair(
-                new PairFunction<Tuple2<Long, Tuple2<String, Optional<Long>>>, Long, String>() {
-                    private static final long serialVersionUID = 1L;
-
-                    @Override
-                    public Tuple2<Long, String> call(
-                            Tuple2<Long, Tuple2<String, Optional<Long>>> tuple)
-                            throws Exception {
+        tmpMapRDD = tmpMapRDD.leftOuterJoin(payCategoryId2CountRDD).mapPartitionsToPair(
+            new PairFlatMapFunction<Iterator<Tuple2<Long, Tuple2<String, Optional<Long>>>>, Long, String>() {
+                private static final long serialVersionUID = 1L;
+                @Override
+                public Iterator<Tuple2<Long, String>> call(Iterator<Tuple2<Long, Tuple2<String, Optional<Long>>>> tuple2Iterator) throws Exception {
+                    List<Tuple2<Long, String>> list = new ArrayList();
+                    while (tuple2Iterator.hasNext()){
+                        Tuple2<Long, Tuple2<String, Optional<Long>>> tuple = tuple2Iterator.next();
                         long categoryid = tuple._1;
                         String value = tuple._2._1;
-
                         Optional<Long> optional = tuple._2._2;
                         long payCount = 0L;
                         if (optional.isPresent()) {
                             payCount = optional.get();
                         }
                         value = value + "|" + Constants.FIELD_PAY_COUNT + Constants.REGEX_EQUAL + payCount;
-                        return new Tuple2<Long, String>(categoryid, value);
+                        list.add(new Tuple2<Long, String>(categoryid, value));
                     }
+                    return list.iterator();
                 }
+            }
         );
-
         return tmpMapRDD;
 
     }

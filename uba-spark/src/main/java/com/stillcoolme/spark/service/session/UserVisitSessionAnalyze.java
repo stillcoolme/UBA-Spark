@@ -44,7 +44,6 @@ import java.util.Random;
 
 /**
  * 用户访问的 session 分析Spark作业， 主要使用了 mapToPair 聚合 过滤
- * <p>
  * 接收用户创建的分析任务，用户可能指定的条件如下：
  * 1、时间范围：起始日期~结束日期
  * 2、性别：男或女
@@ -86,6 +85,7 @@ public class UserVisitSessionAnalyze extends BaseService {
         // <session, visitActionInfo>
         JavaPairRDD<String, Row> sessionid2ActionRDD = getSessionid2ActionRDD(actionRDD);
         sessionid2ActionRDD = sessionid2ActionRDD.persist(StorageLevel.MEMORY_ONLY());
+
         // 将行为数据根据session_id进行groupByKey分组(session粒度)，然后与用户信息数据进行join就可以获取到session粒度的操作及用户数据
         // 获取的数据变成<sessionid,(sessionid,searchKeywords,clickCategoryIds,visitlength, steplength, age,professional,city,sex)>
         JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sessionid2ActionRDD);
@@ -135,12 +135,24 @@ public class UserVisitSessionAnalyze extends BaseService {
      * @return
      */
     public static JavaPairRDD<String, Row> getSessionid2ActionRDD(JavaRDD<Row> actionRDD) {
-        return actionRDD.mapToPair(new PairFunction<Row, String, Row>() {
+//        return actionRDD.mapToPair(new PairFunction<Row, String, Row>() {
+//            private static final long serialVersionUID = 1L;
+//            @Override
+//            public Tuple2<String, Row> call(Row row) throws Exception {
+//                // row.getString(2) 得到 sessionId
+//                return new Tuple2<String, Row>(row.getString(2), row);
+//            }
+//        });
+        return actionRDD.mapPartitionsToPair(new PairFlatMapFunction<Iterator<Row>, String, Row>() {
             private static final long serialVersionUID = 1L;
             @Override
-            public Tuple2<String, Row> call(Row row) throws Exception {
-                // row.getString(2) 得到 sessionId
-                return new Tuple2<String, Row>(row.getString(2), row);
+            public Iterator<Tuple2<String, Row>> call(Iterator<Row> rowIterator) throws Exception {
+                List<Tuple2<String, Row>> list = new ArrayList();
+                while(rowIterator.hasNext()){
+                    Row row = rowIterator.next();
+                    list.add(new Tuple2<>(row.getString(2), row));
+                }
+                return list.iterator();
             }
         });
     }
@@ -155,14 +167,28 @@ public class UserVisitSessionAnalyze extends BaseService {
             JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
             JavaPairRDD<String, Row> sessionid2ActionRDD){
         JavaPairRDD<String, Tuple2<String, Row>> rdd = (JavaPairRDD<String, Tuple2<String, Row>>) filteredSessionid2AggrInfoRDD.join(sessionid2ActionRDD);
-        JavaPairRDD<String, Row> sessionid2detailRDD = rdd.mapToPair(
-                new PairFunction<Tuple2<String, Tuple2<String, Row>>, String, Row>() {
-                    private static final long serialVersionUID = 1L;
-                    @Override
-                    public Tuple2<String, Row> call(Tuple2<String, Tuple2<String, Row>> tuple) throws Exception {
-                        return new Tuple2<String, Row>(tuple._1, tuple._2._2);
+//        JavaPairRDD<String, Row> sessionid2detailRDD = rdd.mapToPair(
+//                new PairFunction<Tuple2<String, Tuple2<String, Row>>, String, Row>() {
+//                    private static final long serialVersionUID = 1L;
+//                    @Override
+//                    public Tuple2<String, Row> call(Tuple2<String, Tuple2<String, Row>> tuple) throws Exception {
+//                        return new Tuple2<String, Row>(tuple._1, tuple._2._2);
+//                    }
+//                }
+//        );
+        JavaPairRDD<String, Row> sessionid2detailRDD = rdd.mapPartitionsToPair(
+            new PairFlatMapFunction<Iterator<Tuple2<String, Tuple2<String, Row>>>, String, Row>() {
+                private static final long serialVersionUID = 1L;
+                @Override
+                public Iterator<Tuple2<String, Row>> call(Iterator<Tuple2<String, Tuple2<String, Row>>> tuple2Iterator) throws Exception {
+                    List<Tuple2<String, Row>> list = new ArrayList<>();
+                    while (tuple2Iterator.hasNext()){
+                        Tuple2<String, Tuple2<String, Row>> tuple = tuple2Iterator.next();
+                        list.add(new Tuple2<String, Row>(tuple._1, tuple._2._2));
                     }
+                    return list.iterator();
                 }
+            }
         );
         return sessionid2detailRDD;
     }
@@ -703,13 +729,49 @@ public class UserVisitSessionAnalyze extends BaseService {
         // 4. 抽取出来的session id 和 sessionAction数据 join 得到 detail数据，然后入库
         JavaPairRDD<String, Tuple2<String, Row>> extractSessionDetailRDD =
                 (JavaPairRDD<String, Tuple2<String, Row>>) extractSessionidsRDD.join(sessionid2actionRDD);
-        extractSessionDetailRDD.foreach(
-                new VoidFunction<Tuple2<String,Tuple2<String,Row>>>() {
-                    private static final long serialVersionUID = 1L;
-                    @Override
-                    public void call(Tuple2<String, Tuple2<String, Row>> tuple) throws Exception {
+//        extractSessionDetailRDD.foreach(
+//                new VoidFunction<Tuple2<String,Tuple2<String,Row>>>() {
+//                    private static final long serialVersionUID = 1L;
+//                    @Override
+//                    public void call(Tuple2<String, Tuple2<String, Row>> tuple) throws Exception {
+//                        Row row = tuple._2._2;
+//                        SessionDetail sessionDetail = new SessionDetail();
+//                        sessionDetail.setTaskid(taskid);
+//                        if(row.getAs(1) != null){
+//                            sessionDetail.setUserid(row.getAs(1));
+//                        }
+//                        if(row.getAs(3) != null){
+//                            sessionDetail.setPageid(row.getAs(3));
+//                        }
+//                        sessionDetail.setActionTime(row.getString(4));
+//                        sessionDetail.setSearchKeyword(row.getString(5));
+//                        if(row.getAs(6) != null){
+//                            sessionDetail.setClickCategoryId(row.getAs(6));
+//                        }
+//                        if(row.getAs(7) != null){
+//                            sessionDetail.setClickProductId(row.getAs(7));
+//                        }
+//                        sessionDetail.setOrderCategoryIds(row.getString(8));
+//                        sessionDetail.setOrderProductIds(row.getString(9));
+//                        sessionDetail.setPayCategoryIds(row.getString(10));
+//                        sessionDetail.setPayProductIds(row.getString(11));
+//                        ISessionDetailDao sessionDetailDao = DaoFactory.getSessionDetailDao();
+//                        sessionDetailDao.insert(sessionDetail);
+//                    }
+//                });
+        try{
+            extractSessionDetailRDD.foreachPartition(
+                new VoidFunction<Iterator<Tuple2<String, Tuple2<String, Row>>>>() {
+                private static final long serialVersionUID = 1L;
+                @Override
+                public void call(Iterator<Tuple2<String, Tuple2<String, Row>>> tuple2Iterator) throws Exception {
+                    List<SessionDetail> dataList = new ArrayList();
+                    while(tuple2Iterator.hasNext()){
+                        Tuple2<String, Tuple2<String, Row>> tuple = tuple2Iterator.next();
                         Row row = tuple._2._2;
+                        String sessionId=tuple._1;
                         SessionDetail sessionDetail = new SessionDetail();
+                        sessionDetail.setSessionid(sessionId);
                         sessionDetail.setTaskid(taskid);
                         if(row.getAs(1) != null){
                             sessionDetail.setUserid(row.getAs(1));
@@ -729,11 +791,15 @@ public class UserVisitSessionAnalyze extends BaseService {
                         sessionDetail.setOrderProductIds(row.getString(9));
                         sessionDetail.setPayCategoryIds(row.getString(10));
                         sessionDetail.setPayProductIds(row.getString(11));
-                        ISessionDetailDao sessionDetailDao = DaoFactory.getSessionDetailDao();
-                        sessionDetailDao.insert(sessionDetail);
+                        dataList.add(sessionDetail);
                     }
-                });
-        extractSessionDetailRDD.count();
+                    DaoFactory.getSessionDetailDao().insertBatch(dataList);
+                }
+            });
+        }catch (Exception e){
+            logger.warn("随机抽取数据入库失败" + e.getMessage());
+        }
+        logger.warn("随机抽取数据入库成功");
     }
 
 }

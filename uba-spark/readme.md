@@ -182,6 +182,13 @@ JSON是起到了什么作用呢？我们在task表中的task_param字段，会�
 
 ## 10 遇到的问题
 
+### 10,0 作业显示执行用户分析过过滤前数据0条
+
+说明前面按照时间获取用户行为信息失败啊。
+自己mock的数据是当天的，然后传进来的task的时间范围不包括当天的就没数据啊。
+不是程序出错了。
+
+
 ### 10.1 读取Long类型的空值报错
 UserVisitSessionAnalyze类里面的
 JavaPairRDD<Long, String> userid2PartAggrInfoRDD = sessionid2ActionsRDD.mapToPair(）里面。
