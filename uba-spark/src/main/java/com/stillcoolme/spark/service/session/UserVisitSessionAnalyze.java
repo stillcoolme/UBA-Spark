@@ -210,8 +210,8 @@ public class UserVisitSessionAnalyze extends BaseService {
                         + "and date<='" + endDate + "'";
 
         Dataset<Row> actionDF = sparkSession.sql(sql);
-
-        return actionDF.javaRDD();
+        // repartition 解决 Spark SQL可能出现低并行度的性能问题
+        return actionDF.javaRDD().repartition(20);
     }
 
     /**

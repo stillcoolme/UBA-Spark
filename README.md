@@ -4,6 +4,8 @@
 ## 1. 项目介绍
 
 ### 1.2 功能
+
+**用户session行为分析**
 用户在网站内从打开/进入，到做了大量操作，到最后关闭浏览器的访问过程为一次session,该项目就是通过大数据技术，来针对用户的session行为做具体分析展示。
 1. 对用户访问session进行分析，筛选出指定的一些用户（有特定年龄、职业、城市）
 2. JDBC辅助类封装
@@ -16,7 +18,8 @@
 9. 数据倾斜全套完美解决方案
 10. 模块功能演示
 
-### 1.1 架构
+
+### 1.2 架构
 1. J2EE的平台，通过这个J2EE平台页面可以让使用者，提交各种各样的分析任务，包括用户访问session分析模块；可以指定各种各样的筛选条件，比如年龄范围、职业、城市等等。。
 2. J2EE平台接收到了执行统计分析任务的请求之后，会调用底层的封装了spark-submit的shell脚本（Runtime、Process），shell脚本进而提交我们编写的Spark作业。
 3. Spark作业获取使用者指定的筛选参数，然后运行复杂的作业逻辑，进行该模块的统计和分析。
@@ -577,7 +580,6 @@ task会用我们自己定义的聚合函数reduceByKey(_+_)，把所有values进
 第二个stage，task在拉取数据的时候，就不会去拉取上一个stage每一个task为自己创建的那份输出文件了；而是拉取少量的输出文件，每个输出文件中，可能包含了多个task给自己的map端输出。
 
 
-
 #### 3.6.3 调节map端内存缓冲与reduce端内存占比
 深入一下shuffle原理：
 shuffle的map task：
@@ -668,5 +670,203 @@ RDD这种filter之后，RDD中的每个partition的数据量，可能都不太�
 2、主要创建或者获取一个数据库连接就可以
 3、只要向数据库发送一次SQL语句和多组参数即可
 
-### 3.7.4 
+**local模式跑的时候foreachPartition批量入库会卡住**，可能资源不足，因为用standalone集群跑的时候不会出现。
+
+### 3.7.4 repartition 解决Spark SQL低并行度的性能问题
+并行度：可以这样调节：
+1、spark.default.parallelism   指定为全部executor的cpu core总数的2~3倍
+2、textFile()，传入第二个参数，指定partition数量（比较少用）
+**但是通过spark.default.parallelism参数指定的并行度，只会在没有Spark SQL的stage中生效**。
+Spark SQL自己会默认根据hive表对应的hdfs文件的block，自动设置Spark SQL查询所在的那个stage的并行度。
+
+比如第一个stage，用了Spark SQL从hive表中查询出了一些数据，然后做了一些transformation操作，接着做了一个shuffle操作（groupByKey），这些都不会应用指定的并行度可能会有非常复杂的业务逻辑和算法，就会导致第一个stage的速度，特别慢；下一个stage，在shuffle操作之后，做了一些transformation操作才会变成你自己设置的那个并行度。
+
+解决上述Spark SQL无法设置并行度和task数量的办法，是什么呢？
+
+repartition算子，可以将你用Spark SQL查询出来的RDD，使用repartition算子时，去重新进行分区，此时可以分区成多个partition，比如从20个partition分区成100个。
+就可以避免跟Spark SQL绑定在一个stage中的算子，只能使用少量的task去处理大量数据以及复杂的算法逻辑。
+
+### 3.7.5 reduceByKey本地聚合介绍
+reduceByKey，相较于普通的shuffle操作（比如groupByKey），它有一个特点：会进行map端的本地聚合。
+对map端给下个stage每个task创建的输出文件中，写数据之前，就会进行本地的combiner操作，也就是说对每一个key，对应的values，都会执行你的算子函数。
+
+用reduceByKey对性能的提升：
+1、在本地进行聚合以后，在map端的数据量就变少了，减少磁盘IO。而且可以减少磁盘空间的占用。
+2、下一个stage，拉取数据的量，也就变少了。减少网络的数据传输的性能消耗。
+3、在reduce端进行数据缓存的内存占用变少了，要进行聚合的数据量也变少了。
+
+reduceByKey在什么情况下使用呢？
+1、简单的wordcount程序。
+2、对于一些类似于要对每个key进行一些字符串拼接的这种较为复杂的操作，可以自己衡量一下，其实有时，也是可以使用reduceByKey来实现的。但是不太好实现。如果真能够实现出来，对性能绝对是有帮助的。
+
+## 3.8 troubleshooting调优
+
+### 3.8.1 控制shuffle reduce端缓冲大小以避免OOM
+map端的task是不断的输出数据的，数据量可能是很大的。
+但是，在map端写过来一点数据，reduce端task就会拉取一小部分数据，先放在buffer中，立即进行后面的聚合、算子函数的应用。
+每次reduece能够拉取多少数据，就由buffer来决定。然后才用后面的executor分配的堆内存占比（0.2），hashmap，去进行后续的聚合、函数的执行。
+
+reduce端缓冲默认是48MB（buffer），可能会出什么问题？
+缓冲达到最大极限值，再加上你的reduce端执行的聚合函数的代码，可能会创建大量的对象。reduce端的内存中，就会发生内存溢出的问题。
+这个时候，就应该减少reduce端task缓冲的大小。我宁愿多拉取几次，但是每次同时能够拉取到reduce端每个task的数量，比较少，就不容易发生OOM内存溢出的问题。
+
+另外，如果你的Map端输出的数据量也不是特别大，然后你的**整个application的资源也特别充足，就可以尝试去增加这个reduce端缓冲大小的，比如从48M，变成96M**。
+这样每次reduce task能够拉取的数据量就很大。需要拉取的次数也就变少了。
+最终达到的效果，就应该是性能上的一定程度上的提升。
+设置
+spark.reducer.maxSizeInFlight
+
+
+### 3.8.2 解决JVM GC导致的shuffle文件拉取失败
+比如，executor的JVM进程，内存不够了，发生GC，导致BlockManger,netty通信都停了。
+下一个stage的executor，可能是还没有停止掉的，task想要去上一个stage的task所在的exeuctor，去拉取属于自己的数据，结果由于对方正在GC，就导致拉取了半天没有拉取到。
+可能会报错shuffle file not found。但是，可能下一个stage又重新提交了stage或task以后，再执行就没有问题了，因为可能第二次就没有碰到JVM在gc了。
+有的时候，出现这种情况以后，会重新去提交stage、task。重新执行一遍，发现就好了。没有这种错误了。
+
+
+spark.shuffle.io.maxRetries 3
+spark.shuffle.io.retryWait 5s
+
+针对这种情况，我们完全可以进行预备性的参数调节。
+增大上述两个参数的值，达到比较大的一个值，尽量保证第二个stage的task，一定能够拉取到上一个stage的输出文件。
+尽量避免因为gc导致的shuffle file not found，无法拉取到的问题。
+
+
+### 3.8.3 yarn-cluster模式的JVM内存溢出无法执行问题
+总结一下yarn-client和yarn-cluster模式的不同之处：
+yarn-client模式，driver运行在本地机器上的；yarn-cluster模式，driver是运行在yarn集群上某个nodemanager节点上面的。
+yarn-client的driver运行在本地，通常来说本地机器跟yarn集群都不会在一个机房的，所以说性能可能不是特别好；yarn-cluster模式下，driver是跟yarn集群运行在一个机房内，性能上来说，也会好一些。
+
+实践经验，碰到的yarn-cluster的问题：
+
+有的时候，运行一些包含了spark sql的spark作业，可能会碰到yarn-client模式下，可以正常提交运行；yarn-cluster模式下，可能是无法提交运行的，会报出JVM的PermGen（永久代）的内存溢出，会报出PermGen Out of Memory error log。
+
+yarn-client模式下，driver是运行在本地机器上的，spark使用的JVM的PermGen的配置，是本地的spark-class文件（spark客户端是默认有配置的），JVM的永久代的大小是128M，这个是没有问题的；但是在yarn-cluster模式下，driver是运行在yarn集群的某个节点上的，使用的是没有经过配置的默认设置（PermGen永久代大小），82M。
+
+spark-submit脚本中，加入以下配置即可：
+--conf spark.driver.extraJavaOptions="-XX:PermSize=128M -XX:MaxPermSize=256M"
+
+另外，sql有大量的or语句。可能就会出现一个driver端的jvm stack overflow。
+基本上就是由于调用的方法层级过多，因为产生了非常深的，超出了JVM栈深度限制的，递归。spark sql内部源码中，在解析sqlor特别多的话，就会发生大量的递归。
+建议不要搞那么复杂的spark sql语句。
+采用替代方案：将一条sql语句，拆解成多条sql语句来执行。
+每条sql语句，就只有100个or子句以内；一条一条SQL语句来执行。
+
+
+
+## 3.9 数据倾斜条调优
+### 3.9.1 数据倾斜的原理、现象、产生原因与定位
+**原因**
+在执行shuffle操作的时候，是按照key，来进行values的数据的输出、拉取和聚合的。
+同一个key的values，一定是分配到一个reduce task进行处理的。
+假如多个key对应的values，总共是90万。
+可能某个key对应了88万数据，key-88万values，分配到一个task上去面去执行，执行很慢。而另外两个task，可能各分配到了1万数据，可能是数百个key，才对应的1万条数据。
+就出现数据倾斜。
+基本只可能是因为发生了shuffle操作，出现数据倾斜的问题。
+
+定位：在自己的程序里面找找，哪些地方用了会产生shuffle的算子，groupByKey、countByKey、reduceByKey、join。看log，看看是执行到了第几个stage。哪一个stage，task特别慢，就能够自己用肉眼去对你的spark代码进行stage的划分，就能够通过stage定位到你的代码，哪里发生了数据倾斜。
+
+**第一个方案：聚合源数据**
+做一些聚合的操作：groupByKey、reduceByKey，说白了就是对每个key对应的values执行一定的计算。
+spark作业的数据来源如果是hive，可以直接在生成hive表的hive etl中，对数据进行聚合。
+比如按key来分组，将key对应的所有的values，全部用一种特殊的格式，拼接到一个字符串里面去，每个key就只对应一条数据。比如
+```
+key=sessionid, value: action_seq=1|user_id=1|search_keyword=火锅|category_id=001;action_seq=2|user_id=1|search_keyword=涮肉|category_id=001”。
+
+然后在spark中，拿到key=sessionid，values<Iterable>。
+
+```
+或者在hive里面就进行reduceByKey计算。
+spark中就不需要再去执行groupByKey+map这种操作了。
+直接对每个key对应的values字符串进行map进行你需要的操作即可。也就根本不可能导致数据倾斜。
+
+具体怎么去在hive etl中聚合和操作，就得根据你碰到数据倾斜问题的时候，你的spark作业的源hive表的具体情况，具体需求，具体功能，具体分析。
+
+具体对于我们的程序来说，完全可以将aggregateBySession()这一步操作，放在一个hive etl中来做，形成一个新的表。
+对每天的用户访问行为数据，都按session粒度进行聚合，写一个hive sql。
+**在spark程序中，就不要去做groupByKey+mapToPair这种算子了**。
+直接从当天的session聚合表中，用SparkSQL查询出来对应的数据，即可。
+这个RDD在后面就可以使用了。
+
+
+**第二个方案：过滤导致倾斜的key**
+如果你能够接受某些数据，在spark作业中直接就摒弃掉，不使用。
+比如说，总共有100万个key。只有2个key，是数据量达到10万的。其他所有的key，对应的数量都是几十。
+这个时候，你自己可以去取舍，如果业务和需求可以理解和接受的话，在你从hive表查询源数据的时候，直接在sql中用where条件，过滤掉某几个key。
+那么这几个原先有大量数据，会导致数据倾斜的key，被过滤掉之后，那么在你的spark作业中，自然就不会发生数据倾斜了。
+
+
+### 3.9.2 提高shuffle操作的reduce并行度
+将reduce task的数量，变多，就可以让每个reduce task分配到更少的数据量。
+这样的话，也许就可以缓解，或者甚至是基本解决掉数据倾斜的问题。
+提升shuffle reduce端并行度，怎么来操作？
+在调用shuffle算子的时候，传入进去一个参数。就代表了那个shuffle操作的reduce端的并行度。那么在进行shuffle操作的时候，就会对应着创建指定数量的reduce task。
+按照log，找到发生数据倾斜的shuffle操作，给它传入一个并行度数字，这样的话，原先那个task分配到的数据，肯定会变少。就至少可以避免OOM的情况，程序至少是可以跑的。
+
+但是**没有从根本上改变数据倾斜的本质和问题。**
+不像第一个和第二个方案（直接避免了数据倾斜的发生）。
+原理没有改变，只是说，尽可能地去缓解和减轻shuffle reduce task的数据压力，以及数据倾斜的问题。
+
+实际生产环境中的经验。
+1、如果最理想的情况下，提升并行度以后，减轻了数据倾斜的问题，那么就最好。就不用做其他的数据倾斜解决方案了。
+2、不太理想的情况下，就是比如之前某个task运行特别慢，要5个小时，现在稍微快了一点，变成了4个小时；或者是原先运行到某个task，直接OOM，现在至少不会OOM了，但是那个task运行特别慢，要5个小时才能跑完。
+那么，如果出现第二种情况的话，各位，就立即放弃第三种方案，开始去尝试和选择后面的方案。
+
+
+### 3.9.3 使用随机key实现双重聚合
+1、原理
+第一轮聚合的时候，对key进行打散，将原先一样的key，变成不一样的key，相当于是将每个key分为多组；比如原来是
+```
+(5,44)、(6,45)、(7,45)
+就可以对key添加一个随机数
+(1_5,44)、(3_6,45)、(2_7,45)
+针对多个组，进行key的局部聚合；
+接着，再去除掉每个key的前缀，恢复成
+(5,44)、(6,45)、(7,45)
+然后对所有的key，进行全局的聚合。
+```
+对groupByKey、reduceByKey造成的数据倾斜，有比较好的效果。
+
+2、使用场景
+（1）groupByKey
+（2）reduceByKey
+
+### 3.9.4 将导致倾斜的key单独进行join
+这个方案关键之处在于: 
+将发生数据倾斜的key，单独拉出来，放到一个RDD中去；
+用这个原本会倾斜的key RDD跟其他RDD，单独去join一下，
+key对应的数据，可能就会分散到多个task中去进行join操作。
+这个key跟之前其他的key混合在一个RDD中时，肯定是会导致一个key对应的所有数据，都到一个task中去，就会导致数据倾斜。
+
+**这种方案什么时候适合使用？**
+
+针对你的RDD的数据，你可以自己把它转换成一个中间表，或者是直接用countByKey()的方式，你可以看一下这个RDD各个key对应的数据量；
+RDD有一个或少数几个key，是对应的数据量特别多；
+此时可以采用咱们的这种方案，单拉出来那个最多的key；
+单独进行join，尽可能地将key分散到各个task上去进行join操作。
+
+### 3.9.5 使用随机数以及扩容表进行join
+这个方案是没办法彻底解决数据倾斜的，更多的，是一种对数据倾斜的缓解。
+局限性：
+1、因为join两个RDD都很大，就没有办法去将某一个RDD扩的特别大，一般是10倍。
+2、如果就是10倍的话，那么数据倾斜问题，只能说是缓解和减轻，不能说彻底解决。
+
+步骤：
+1、选择一个RDD，要用flatMap，进行扩容，将每条数据，映射为多条数据，每个映射出来的数据，都带了一个n以内的随机数，通常来说，会选择10。
+2、将另外一个RDD，做普通的map映射操作，每条数据，都打上一个10以内的随机数。
+3、最后，将两个处理后的RDD，进行join操作。
+4、join完以后，可以执行map操作，去将之前打上的随机数，给去掉，然后再和另外一个普通RDD join以后的结果，进行union操作。
+
+sample采样倾斜key并单独进行join
+将key，从另外一个RDD中过滤出的数据，可能只有一条，或者几条，此时，咱们可以任意进行扩容，扩成1000倍。
+将从第一个RDD中拆分出来的那个倾斜key RDD，打上1000以内的一个随机数。
+打散成100份，甚至1000份去进行join，那么就肯定没有数据倾斜的问题了吧。
+这种情况下，还可以配合上，提升shuffle reduce并行度，join(rdd, 1000)。
+
+
+
+
+
+
+
 
