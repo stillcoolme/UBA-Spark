@@ -14,6 +14,7 @@ public class DateUtils {
 	
 	public static final SimpleDateFormat TIME_FORMAT =
 			new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
 	public static ThreadLocal<SimpleDateFormat> TIME_FORMAT_THREADLOCAL =
 			new ThreadLocal<SimpleDateFormat>(){
 		@Override
@@ -21,10 +22,11 @@ public class DateUtils {
 			return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 		}
 	};
+
 	public static final SimpleDateFormat DATE_FORMAT = 
 			new SimpleDateFormat("yyyy-MM-dd");
 
-	public static Date parseDate(String time){
+	public static Date parseTime(String time){
 		try {
 			Date result = TIME_FORMAT_THREADLOCAL.get().parse(time);
 			TIME_FORMAT_THREADLOCAL.remove();

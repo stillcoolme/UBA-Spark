@@ -122,9 +122,6 @@ public class UserVisitSessionAnalyze extends BaseService {
         // 获取top10的session
         UserTop10ActiveSessionAnalyse.getTop10ActiveSession(taskid, sessionId2DetailRDD, top10Ids);
 
-        // 关闭Spark上下文
-        sparkSession.close();
-
         return null;
     }
 
@@ -199,7 +196,7 @@ public class UserVisitSessionAnalyze extends BaseService {
      * @param taskParam 任务参数
      * @return 行为数据RDD
      */
-    private static JavaRDD<Row> getActionRDDByDateRange(JSONObject taskParam) {
+    public static JavaRDD<Row> getActionRDDByDateRange(JSONObject taskParam) {
         String startDate = ParamUtils.getParam(taskParam, Constants.PARAM_START_DATE);
         String endDate = ParamUtils.getParam(taskParam, Constants.PARAM_END_DATE);
 
@@ -286,7 +283,7 @@ public class UserVisitSessionAnalyze extends BaseService {
                             }
 
                             //计算session的访问开始结束时间
-                            Date actionTime = DateUtils.parseDate(row.getString(4));
+                            Date actionTime = DateUtils.parseTime(row.getString(4));
                             if (startTime == null) {
                                 startTime = actionTime;
                             }

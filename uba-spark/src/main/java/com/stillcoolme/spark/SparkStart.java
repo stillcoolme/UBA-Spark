@@ -3,6 +3,7 @@ package com.stillcoolme.spark;
 import com.stillcoolme.spark.constant.Constants;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.service.BaseService;
+import com.stillcoolme.spark.service.pageconvert.PageConvertRateAnalyse;
 import com.stillcoolme.spark.service.session.CategorySortKey;
 import com.stillcoolme.spark.service.session.UserVisitSessionAnalyze;
 import com.stillcoolme.spark.utils.Config;
@@ -18,6 +19,7 @@ import org.apache.spark.sql.SparkSession;
 import java.util.Date;
 
 import static com.stillcoolme.spark.service.BaseService.javaSparkContext;
+import static com.stillcoolme.spark.service.BaseService.sparkSession;
 import static com.stillcoolme.spark.service.BaseService.sqlContext;
 
 /**
@@ -40,9 +42,9 @@ public class SparkStart {
                 .set("spark.locality.wait", "5")    // 调节数据本地化等待时长
                 .set("spark.shuffle.consolidateFiles", "true");     // shuffle调优：合并map端输出文件
 
-        BaseService.sparkSession = SparkSession.builder().config(conf).getOrCreate();
-        BaseService.javaSparkContext = new JavaSparkContext(BaseService.sparkSession.sparkContext());
-        BaseService.sqlContext = BaseService.sparkSession.sqlContext();
+        sparkSession = SparkSession.builder().config(conf).getOrCreate();
+        BaseService.javaSparkContext = new JavaSparkContext(sparkSession.sparkContext());
+        BaseService.sqlContext = sparkSession.sqlContext();
         BaseService.reader = sqlContext.read().format("jdbc");
         BaseService.reader.option("url", Config.jdbcProps.getProperty("jdbc.url"));          //数据库路径
         BaseService.reader.option("driver", Config.jdbcProps.getProperty("jdbc.driver"));
@@ -51,14 +53,18 @@ public class SparkStart {
 
         // 生成模拟测试数据
         mockData(javaSparkContext, sqlContext);
-
-        BaseService baseService = new UserVisitSessionAnalyze();
         ReqEntity reqEntity = new ReqEntity();
+        // session分析任务
+        BaseService baseService1 = new UserVisitSessionAnalyze();
         reqEntity.setReqData("[{\"taskId\":1}]");
-        baseService.run(reqEntity);
+        baseService1.run(reqEntity);
+        // 转化率分析任务
+        BaseService baseService2 = new PageConvertRateAnalyse();
+        reqEntity.setReqData("[{\"taskId\":3}]");
+        baseService2.run(reqEntity);
 
         // 关闭Spark上下文
-        javaSparkContext.close();
+        sparkSession.close();
     }
 
     /**
