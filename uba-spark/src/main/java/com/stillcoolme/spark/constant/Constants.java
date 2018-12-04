@@ -91,4 +91,15 @@ public interface Constants {
     String PARAM_CATEGORY_IDS = "categoryIds";
     String PARAM_TARGET_PAGE_FLOW = "targetPageFlow";
 
+    /**
+     * 热门产品中使用的表格
+     */
+    // 点击的商品id 基础表
+    String TABLE_CLICK_PRODUCT_BASIC = "tmp_click_product_basic";
+    // 各区域内各商品点击数 统计表
+    String TABLE_AREA_PRODUCT_CLICK_COUNT = "tmp_area_product_click_count";
+    // 商品信息表
+    String TABLE_PRODUCT_INFO = "tmp_product_info";
+    // 各区域内各商品点击数 关联了 商品信息表后的 表
+    String TABLE_AREA_FULLPROD_CLICK_COUNT = "tmp_area_fullprod_click_count";
 }

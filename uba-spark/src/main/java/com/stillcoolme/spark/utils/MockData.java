@@ -48,7 +48,8 @@ public class MockData {
 				String baseActionTime = date + " " + random.nextInt(23);
 				  
 				for(int k = 0; k < random.nextInt(100); k++) {
-					long pageid = random.nextInt(10);    
+					long pageid = random.nextInt(10);
+					long city_id = random.nextInt(10);
 					String actionTime = baseActionTime + ":" + StringUtils.fulfuill(String.valueOf(random.nextInt(59))) + ":" + StringUtils.fulfuill(String.valueOf(random.nextInt(59)));
 					String searchKeyword = null;
 					Long clickCategoryId = null;
@@ -76,7 +77,7 @@ public class MockData {
 							pageid, actionTime, searchKeyword,
 							clickCategoryId, clickProductId,
 							orderCategoryIds, orderProductIds,
-							payCategoryIds, payProductIds);
+							payCategoryIds, payProductIds, city_id);
 					rows.add(row);
 				}
 			}
@@ -96,7 +97,8 @@ public class MockData {
 				DataTypes.createStructField("order_category_ids", DataTypes.StringType, true),
 				DataTypes.createStructField("order_product_ids", DataTypes.StringType, true),
 				DataTypes.createStructField("pay_category_ids", DataTypes.StringType, true),
-				DataTypes.createStructField("pay_product_ids", DataTypes.StringType, true)));
+				DataTypes.createStructField("pay_product_ids", DataTypes.StringType, true),
+				DataTypes.createStructField("city_id", DataTypes.LongType, true)));
 
 		//构造 搜索的数据
 		Dataset<Row> visitActionDF = sqlContext.createDataFrame(rowsRDD, schema);

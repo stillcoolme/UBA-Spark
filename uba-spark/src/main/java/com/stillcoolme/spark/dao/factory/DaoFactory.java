@@ -1,5 +1,6 @@
 package com.stillcoolme.spark.dao.factory;
 
+import com.stillcoolme.spark.dao.IAreaTop3ProductDao;
 import com.stillcoolme.spark.dao.IPageSplitConvertRateDao;
 import com.stillcoolme.spark.dao.ISessionAggrStatDao;
 import com.stillcoolme.spark.dao.ISessionDetailDao;
@@ -7,6 +8,7 @@ import com.stillcoolme.spark.dao.ISessionRandomExtractDao;
 import com.stillcoolme.spark.dao.ITaskDao;
 import com.stillcoolme.spark.dao.ITop10CategoryDao;
 import com.stillcoolme.spark.dao.ITop10SessionDao;
+import com.stillcoolme.spark.dao.impl.AreaTop3ProductDaoImpl;
 import com.stillcoolme.spark.dao.impl.PageSplitConvertRateDaoImpl;
 import com.stillcoolme.spark.dao.impl.SessionAggrStatDaoImpl;
 import com.stillcoolme.spark.dao.impl.SessionDetailDaoImpl;
@@ -45,5 +47,9 @@ public class DaoFactory {
 
     public static IPageSplitConvertRateDao getPageSplitConvertRateDao(){
         return new PageSplitConvertRateDaoImpl();
+    }
+
+    public static IAreaTop3ProductDao getAreaTop3ProductDao(){
+        return new AreaTop3ProductDaoImpl();
     }
 }

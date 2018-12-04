@@ -4,10 +4,12 @@ import com.stillcoolme.spark.constant.Constants;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.service.BaseService;
 import com.stillcoolme.spark.service.pageconvert.PageConvertRateAnalyse;
+import com.stillcoolme.spark.service.product.udf.ConcatLongStringUDF;
+import com.stillcoolme.spark.service.product.udf.GetJsonObjectUDF;
+import com.stillcoolme.spark.service.product.udf.GroupConcatDistinctUDAF;
 import com.stillcoolme.spark.service.session.CategorySortKey;
 import com.stillcoolme.spark.service.session.UserVisitSessionAnalyze;
 import com.stillcoolme.spark.utils.Config;
-import com.stillcoolme.spark.utils.ConfigurationManager;
 import com.stillcoolme.spark.utils.DateUtils;
 import com.stillcoolme.spark.utils.MockData;
 import org.apache.spark.SparkConf;
@@ -15,6 +17,7 @@ import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.types.DataTypes;
 
 import java.util.Date;
 
@@ -58,10 +61,23 @@ public class SparkStart {
         BaseService baseService1 = new UserVisitSessionAnalyze();
         reqEntity.setReqData("[{\"taskId\":1}]");
         baseService1.run(reqEntity);
+
         // 转化率分析任务
         BaseService baseService2 = new PageConvertRateAnalyse();
         reqEntity.setReqData("[{\"taskId\":3}]");
         baseService2.run(reqEntity);
+
+        sparkSession.udf().register("concat_long_string",
+                new ConcatLongStringUDF(), DataTypes.StringType);
+        sparkSession.udf().register("group_concat_distinct",
+                new GroupConcatDistinctUDAF());
+        sparkSession.udf().register("get_json_object",
+                new GetJsonObjectUDF(), DataTypes.StringType);
+
+        // 热门商品分析任务
+        BaseService baseService3 = new AreaTop3ProductAnalyse();
+        reqEntity.setReqData("[{\"taskId\":4}]");
+        baseService3.run(reqEntity);
 
         // 关闭Spark上下文
         sparkSession.close();
@@ -77,7 +93,7 @@ public class SparkStart {
     private static SQLContext getSQLContext(SparkContext sc) {
         String runMode = Config.sparkProps.getProperty(Constants.SPARK_MASTER);
         if(runMode.equals("local")) {
-            return new SQLContext(sc);
+            return sparkSession.sqlContext();
         } else {
 //            return new HiveContext(sc);
             return null;
