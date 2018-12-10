@@ -4,6 +4,9 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import org.apache.spark.sql.api.java.UDF2;
 
+/**
+ * 用于获取 某个字段里面的jsonString的值
+ */
 public class GetJsonObjectUDF implements UDF2<String, String, String> {
     private static final long serialVersionUID = 1L;
     @Override

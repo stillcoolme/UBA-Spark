@@ -156,7 +156,17 @@ public class AreaTop3ProductAnalyse extends BaseService {
                 "group_concat_distinct(concat_long_string(city_id, city_name, ':')) city_infos " +
                 "FROM " + Constants.TABLE_CLICK_PRODUCT_BASIC +
                 " GROUP BY area,product_id ";
-        // 使用Spark SQL执行这条SQL语句
+
+        // 双重group 和 添加随机前缀 的sql
+        String doubleGroupSql = ""
+        + "SELECT product_id_area, count(click_count) click_count, group_concat_distinct(city_infos) city_infos FROM "
+             + " (SELECT remove_random_prefix(product_id_area) product_id_area, click_count, city_infos FROM "
+                + " (SELECT product_id_area, count(*) click_count, group_concat_distinct(concat_long_string(city_id, city_name, ':')) city_infos FROM "
+                    + " (SELECT random_prefix(concat_long_string(product_id, area, ':'), 10) product_id_area, city_id, city_name FROM " + Constants.TABLE_CLICK_PRODUCT_BASIC  + ") t1"
+                + " GROUP BY product_id_area) t2"
+             + " ) t3"
+        + " GROUP BY product_id_area";
+
         Dataset<Row> df = sparkSession.sql(sql);
         // 再次将查询出来的数据注册为一个临时表
         // 各区域各商品的点击次数（以及额外的城市列表）

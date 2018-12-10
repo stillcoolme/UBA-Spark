@@ -4,9 +4,12 @@ import com.stillcoolme.spark.constant.Constants;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.service.BaseService;
 import com.stillcoolme.spark.service.pageconvert.PageConvertRateAnalyse;
+import com.stillcoolme.spark.service.product.AreaTop3ProductAnalyse;
 import com.stillcoolme.spark.service.product.udf.ConcatLongStringUDF;
 import com.stillcoolme.spark.service.product.udf.GetJsonObjectUDF;
 import com.stillcoolme.spark.service.product.udf.GroupConcatDistinctUDAF;
+import com.stillcoolme.spark.service.product.udf.RandomPrefixUDF;
+import com.stillcoolme.spark.service.product.udf.RemoveRandomPrefixUDF;
 import com.stillcoolme.spark.service.session.CategorySortKey;
 import com.stillcoolme.spark.service.session.UserVisitSessionAnalyze;
 import com.stillcoolme.spark.utils.Config;
@@ -20,6 +23,7 @@ import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.types.DataTypes;
 
 import java.util.Date;
+import java.util.Random;
 
 import static com.stillcoolme.spark.service.BaseService.javaSparkContext;
 import static com.stillcoolme.spark.service.BaseService.sparkSession;
@@ -67,13 +71,16 @@ public class SparkStart {
         reqEntity.setReqData("[{\"taskId\":3}]");
         baseService2.run(reqEntity);
 
-        sparkSession.udf().register("concat_long_string",
-                new ConcatLongStringUDF(), DataTypes.StringType);
-        sparkSession.udf().register("group_concat_distinct",
-                new GroupConcatDistinctUDAF());
-        sparkSession.udf().register("get_json_object",
-                new GetJsonObjectUDF(), DataTypes.StringType);
-
+        sparkSession.udf().register("group_concat_distinct", new GroupConcatDistinctUDAF());
+        sparkSession.udf().register("get_json_object", new GetJsonObjectUDF(), DataTypes.StringType);
+        //sparkSession.udf().register("concat_long_string", new ConcatLongStringUDF(), DataTypes.StringType);
+        // 用于sql优化，在可能数据倾斜的字段前添加随机前缀做到更加分散
+        //sparkSession.udf().register("random_prefix", new RandomPrefixUDF(), DataTypes.StringType);
+        //sparkSession.udf().register("remove_random_prefix", new RemoveRandomPrefixUDF(), DataTypes.StringType);
+        // 直接实现上面的 3个udf
+        sparkSession.udf().register("concat_long_string", (Long v1, String v2, String split) -> String.valueOf(v1) + split + v2, DataTypes.StringType);
+        sparkSession.udf().register("random_prefix", (String val, Integer integer) -> new Random().nextInt(integer) + "_" + val, DataTypes.StringType);
+        sparkSession.udf().register("remove_random_prefix", (String val) -> val.split("_")[1], DataTypes.StringType);
         // 热门商品分析任务
         BaseService baseService3 = new AreaTop3ProductAnalyse();
         reqEntity.setReqData("[{\"taskId\":4}]");
