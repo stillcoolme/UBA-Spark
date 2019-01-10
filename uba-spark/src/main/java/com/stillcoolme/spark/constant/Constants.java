@@ -35,7 +35,7 @@ public interface Constants {
     String SPARK_LOCAL_TASKID_SESSION = "spark.local.taskid.session";
     String SPARK_LOCAL_TASKID_PAGE = "spark.local.taskid.page";
     String SPARK_LOCAL_TASKID_PRODUCT = "spark.local.taskid.product";
-    String KAFKA_METADATA_BROKER_LIST = "kafka.metadata.broker.list";
+    String KAFKA_METADATA_BROKER_LIST = "bootstrap.servers";
     String KAFKA_TOPICS = "kafka.topics";
 
     /**

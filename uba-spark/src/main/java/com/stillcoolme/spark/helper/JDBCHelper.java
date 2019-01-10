@@ -226,12 +226,14 @@ public class JDBCHelper {
             //1.取消自动提交
             connection.setAutoCommit(false);
             //2.设置参数
-            for (Object[] param:
-                    params) {
-                for (int i = 0; i < param.length; i++) {
-                    statement.setObject(i+1,param[i]);
+            for (Object[] param: params) {
+                if(params != null && params.size() > 0) {
+                    for (int i = 0; i < param.length; i++) {
+                        statement.setObject(i+1,param[i]);
+                    }
+                    statement.addBatch();
                 }
-                statement.addBatch();
+
             }
             //3.批量执行
             res=statement.executeBatch();

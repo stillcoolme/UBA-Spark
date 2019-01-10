@@ -26,6 +26,12 @@ public class DateUtils {
 	public static final SimpleDateFormat DATE_FORMAT = 
 			new SimpleDateFormat("yyyy-MM-dd");
 
+	public static final SimpleDateFormat DATE_FORMAT_KEY =
+			new SimpleDateFormat("yyyyMMdd");
+
+	public static final SimpleDateFormat TIME_MINUTE_FORMAT =
+			new SimpleDateFormat("yyyyMMddHHmm");
+
 	public static Date parseTime(String time){
 		try {
 			Date result = TIME_FORMAT_THREADLOCAL.get().parse(time);
@@ -143,7 +149,25 @@ public class DateUtils {
 	public static String formatDate(Date date) {
 		return DATE_FORMAT.format(date);
 	}
-	
+
+	/**
+	 * 格式化日期（yyyyMMdd）
+	 * @param date Date对象
+	 * @return 格式化后的日期
+	 */
+	public static String formatDateKey(Date date) {
+		return DATE_FORMAT_KEY.format(date);
+	}
+
+	public static Date parseDateKey(String dateString) {
+		try {
+			return DATE_FORMAT_KEY.parse(dateString);
+		} catch (ParseException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
 	/**
 	 * 格式化时间（yyyy-MM-dd HH:mm:ss）
 	 * @param date Date对象
@@ -152,5 +176,17 @@ public class DateUtils {
 	public static String formatTime(Date date) {
 		return TIME_FORMAT.format(date);
 	}
-	
+
+
+	/**
+	 * 格式化时间，保留到分钟级别
+	 * yyyyMMddHHmm
+	 * @param date
+	 * @return
+	 */
+    public static String formatTimeMinute(Date date) {
+		return TIME_MINUTE_FORMAT.format(date);
+
+    }
+
 }

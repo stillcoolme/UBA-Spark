@@ -15,6 +15,7 @@
     <modules>
         <module>uba-web</module>
         <module>uba-spark</module>
+        <module>uba-kafka</module>
     </modules>
 
     <parent>

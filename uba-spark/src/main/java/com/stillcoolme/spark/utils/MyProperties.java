@@ -5,7 +5,7 @@ import java.io.InputStream;
 import java.util.Properties;
 
 /**
- * @author xiekunyuan
+ * @author stillcoolme
  * @date: 2018/2/7 15:24
  **/
 public class MyProperties extends Properties{

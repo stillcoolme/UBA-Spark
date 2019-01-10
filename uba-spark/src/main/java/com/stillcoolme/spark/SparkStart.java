@@ -3,6 +3,7 @@ package com.stillcoolme.spark;
 import com.stillcoolme.spark.constant.Constants;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.service.BaseService;
+import com.stillcoolme.spark.service.adclick.AdClickRealTimeAnalyse;
 import com.stillcoolme.spark.service.pageconvert.PageConvertRateAnalyse;
 import com.stillcoolme.spark.service.product.AreaTop3ProductAnalyse;
 import com.stillcoolme.spark.service.product.udf.ConcatLongStringUDF;
@@ -21,6 +22,8 @@ import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.streaming.Durations;
+import org.apache.spark.streaming.api.java.JavaStreamingContext;
 
 import java.util.Date;
 import java.util.Random;
@@ -30,7 +33,7 @@ import static com.stillcoolme.spark.service.BaseService.sparkSession;
 import static com.stillcoolme.spark.service.BaseService.sqlContext;
 
 /**
- * Created by zhangjianhua on 2018/10/30.
+ * Created by stillcoolme on 2018/10/30.
  */
 public class SparkStart {
 
@@ -51,13 +54,15 @@ public class SparkStart {
 
         sparkSession = SparkSession.builder().config(conf).getOrCreate();
         BaseService.javaSparkContext = new JavaSparkContext(sparkSession.sparkContext());
+        BaseService.javaStreamingContext = new JavaStreamingContext(javaSparkContext, Durations.seconds(1));
+
         BaseService.sqlContext = sparkSession.sqlContext();
         BaseService.reader = sqlContext.read().format("jdbc");
         BaseService.reader.option("url", Config.jdbcProps.getProperty("jdbc.url"));          //数据库路径
         BaseService.reader.option("driver", Config.jdbcProps.getProperty("jdbc.driver"));
         BaseService.reader.option("user", Config.jdbcProps.getProperty("jdbc.user"));
         BaseService.reader.option("password", Config.jdbcProps.getProperty("jdbc.password"));
-
+/*
         // 生成模拟测试数据
         mockData(javaSparkContext, sqlContext);
         ReqEntity reqEntity = new ReqEntity();
@@ -85,6 +90,10 @@ public class SparkStart {
         BaseService baseService3 = new AreaTop3ProductAnalyse();
         reqEntity.setReqData("[{\"taskId\":4}]");
         baseService3.run(reqEntity);
+*/
+        BaseService baseService4 = new AdClickRealTimeAnalyse();
+        baseService4.run(null);
+
 
         // 关闭Spark上下文
         sparkSession.close();
