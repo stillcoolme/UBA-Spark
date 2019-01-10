@@ -17,7 +17,6 @@ public class MockRealTimeData extends Thread {
 	private static Logger LOG = LoggerFactory.getLogger(MockRealTimeData.class);
 	private static final String TOPIC_NAME = "ad";
 	private static final String BROKER = "localhost:9092";
-	//private static final String BROKER = "gosearch-node1:9092,gosearch-node2:9092,gosearch-node3:9092";
 	private static final Random random = new Random();
 	private static final String[] provinces = new String[]{"Jiangsu", "Hubei", "Hunan", "Henan", "Hebei"};  
 	private static final Map<String, String[]> provinceCityMap = new HashMap<String, String[]>();
