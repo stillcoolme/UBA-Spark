@@ -9,7 +9,7 @@
 7. 生产环境测试：Hive表
 
 调优，你要对spark的作业流程清楚：
-* Driver到executor的结构；
+* Driver到Executor的结构；
 ```
 Master: Driver
     |-- Worker: Executor
@@ -17,16 +17,14 @@ Master: Driver
                  |-- stage
                        |-- Task Task 
 ```
-* 作业划分为task分到executor上（一个cpu core执行一个task）；
-* 一个Stage内，最终的RDD有多少个partition，就会产生多少个task；一个task处理一个partition的数据；
+* 一个Stage内，**最终的RDD有多少个partition，就会产生多少个task**，一个task处理一个partition的数据；
+* 作业划分为task分到Executor上，然后一个cpu core执行一个task；
 * BlockManager负责Executor，task的数据管理，task来它这里拿数据；
 
 ## 1.1 资源分配
 性能调优的王道：分配更多资源。
-只有资源分配好了，才能给更好的给以后各个调优点打好基础。spark作业能够分配的资源达到了最大后，那么才是考虑去做后面的这些性能调优的点。
-
-1、分配哪些资源？ executor、cpu per executor、memory per executor、driver memory
-2、在哪里分配这些资源？
+1. 分配哪些资源？ executor、cpu per executor、memory per executor、driver memory
+2. 在哪里分配这些资源？
 在我们在生产环境中，提交spark作业时，用的spark-submit shell脚本，里面调整对应的参数
 
 /usr/local/spark/bin/spark-submit \
@@ -38,10 +36,15 @@ Master: Driver
 /usr/local/SparkTest-0.0.1-SNAPSHOT-jar-with-dependencies.jar \
 
 3、调节到多大，算是最大呢？
-第一种，Spark Standalone，公司集群上，搭建了一套Spark集群，你心里应该清楚每台机器还能够给你使用的，大概有多少内存，多少cpu core；
-那么，设置的时候，就根据这个实际的情况，去调节每个spark作业的资源分配。比如说你的每台机器能够给你使用4G内存，2个cpu core；20台机器；executor，20；4G内存，2个cpu core，平均每个executor。
+第一种，Spark Standalone，公司集群上，搭建了一套Spark集群，设置的时候，根据这个实际的情况，去调节每个spark作业的资源分配。
+假如说一共20台机器，每台机器能使用4G内存，2个cpu core。
+executor = 20，对应worker节点数量；
+executor-memory = 4G内存，对应每个worker能用的最大内存；
+executor-cores = 2，对应每个worker给每个executor能用的最多个cpu core。
 
-第二种，Yarn。资源队列。资源调度。应该去查看spark作业，要提交到的资源队列，大概有多少资源？500G内存，100个cpu core；executor，50；10G内存，2个cpu core，平均每个executor。
+
+第二种，Yarn。资源队列。资源调度。
+应该去查看spark作业，要提交到的资源队列，大概有多少资源？500G内存，100个cpu core；executor，50；10G内存，2个cpu core，平均每个executor。
 
 一个原则，你能使用的资源有多大，就尽量去调节到最大的大小（executor的数量，几十个到上百个不等；executor内存；executor cpu core最大）
 
@@ -65,6 +68,7 @@ Master: Driver
 
 问题：
 1. 对spark的架构居然都不太熟悉，一个Master，多个Worker；一个Driver，多个Executor。
+
 
 ## 1.2 调节并行度
 

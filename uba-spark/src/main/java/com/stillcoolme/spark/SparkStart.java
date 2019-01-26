@@ -3,6 +3,7 @@ package com.stillcoolme.spark;
 import com.stillcoolme.spark.constant.Constants;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.service.BaseService;
+import com.stillcoolme.spark.service.activeuser.UserActiveDegreeAnalyze;
 import com.stillcoolme.spark.service.adclick.AdClickRealTimeAnalyse;
 import com.stillcoolme.spark.service.pageconvert.PageConvertRateAnalyse;
 import com.stillcoolme.spark.service.product.AreaTop3ProductAnalyse;
@@ -46,10 +47,10 @@ public class SparkStart {
         SparkConf conf = new SparkConf()
                 .setMaster(runMode)
                 .setAppName(appName)
-                .set("spark.default.parallelism", "20")
+//                .set("spark.default.parallelism", "20")
                 .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
                 .registerKryoClasses(new Class[]{CategorySortKey.class})  // 二次排序自定义的类要实现kyro序列化要注册
-                .set("spark.locality.wait", "5")    // 调节数据本地化等待时长
+//                .set("spark.locality.wait", "5")    // 调节数据本地化等待时长
                 .set("spark.shuffle.consolidateFiles", "true");     // shuffle调优：合并map端输出文件
 
         sparkSession = SparkSession.builder().config(conf).getOrCreate();
@@ -62,19 +63,25 @@ public class SparkStart {
         BaseService.reader.option("driver", Config.jdbcProps.getProperty("jdbc.driver"));
         BaseService.reader.option("user", Config.jdbcProps.getProperty("jdbc.user"));
         BaseService.reader.option("password", Config.jdbcProps.getProperty("jdbc.password"));
-/*
+
+
         // 生成模拟测试数据
-        mockData(javaSparkContext, sqlContext);
+//        mockData(javaSparkContext, sqlContext);
         ReqEntity reqEntity = new ReqEntity();
+
+ /*
+
         // session分析任务
         BaseService baseService1 = new UserVisitSessionAnalyze();
         reqEntity.setReqData("[{\"taskId\":1}]");
         baseService1.run(reqEntity);
 
+
         // 转化率分析任务
         BaseService baseService2 = new PageConvertRateAnalyse();
         reqEntity.setReqData("[{\"taskId\":3}]");
         baseService2.run(reqEntity);
+
 
         sparkSession.udf().register("group_concat_distinct", new GroupConcatDistinctUDAF());
         sparkSession.udf().register("get_json_object", new GetJsonObjectUDF(), DataTypes.StringType);
@@ -91,8 +98,17 @@ public class SparkStart {
         reqEntity.setReqData("[{\"taskId\":4}]");
         baseService3.run(reqEntity);
 */
+/*
+
+        // 实时广告分析
         BaseService baseService4 = new AdClickRealTimeAnalyse();
         baseService4.run(null);
+
+*/
+
+        BaseService baseService5 = new UserActiveDegreeAnalyze();
+        reqEntity.setReqData("[{\"taskId\":5}]");
+        baseService5.run(reqEntity);
 
 
         // 关闭Spark上下文
