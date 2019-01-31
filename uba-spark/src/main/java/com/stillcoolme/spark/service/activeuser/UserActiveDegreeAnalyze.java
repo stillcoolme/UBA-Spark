@@ -6,18 +6,28 @@ import com.stillcoolme.spark.domain.Task;
 import com.stillcoolme.spark.entity.ReqEntity;
 import com.stillcoolme.spark.entity.RespEntity;
 import com.stillcoolme.spark.service.BaseService;
+import com.stillcoolme.spark.utils.CalanderUtils;
+import com.stillcoolme.spark.utils.DateUtils;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import scala.Tuple2;
-
+import static org.apache.spark.sql.functions.*;
+//import static org.apache.spark.sql.expressions.javalang.typed.sum;
+import java.io.Serializable;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
 /**
+ * 用户活跃度分析
+ * 相关dataset操作参考：https://spark.apache.org/docs/2.4.0/api/java/org/apache/spark/sql/Dataset.html
+ *
  * @author stillcoolme
  * @date 2019/1/18 22:12
  */
@@ -40,24 +50,26 @@ public class UserActiveDegreeAnalyze extends BaseService {
         JSONObject taskParam = JSONObject.parseObject(task.getTaskParam());
         String startDate = taskParam.getString("startDate");
         String endDate = taskParam.getString("endDate");
+        String cycle = taskParam.getString("cycle");    // 用于功能3
 
         // 获取两份数据集
         Dataset<Row> userBaseInfo = sparkSession.read().format("json").load("uba-spark/src/main/resources/data/user_base_info.json");
         Dataset<Row> userActionLog = sparkSession.read().format("json").load("uba-spark/src/main/resources/data/user_action_log.json");
-/*        userBaseInfo.printSchema();
-        userActionLog.printSchema();*/
-
+        userBaseInfo.printSchema();
+        userActionLog.printSchema();
+//        userActionLog.show();
 
         // 第一个功能：统计指定时间范围内的访问次数最多的10个用户
-        Dataset<Row> userActionLogDS = userActionLog.filter("actionTime >= '" + startDate + "' and actionTime <= '" + endDate + "' and actionType = 0");
+        Dataset<Row> userActionLogDS = userActionLog.filter("actionTime > '" + startDate + "' and actionTime <= '" + endDate + "' and actionType = 0");
+
         // java要先转成RDD！
         JavaRDD<Row> userActionLogRDD = userActionLogDS.toJavaRDD();
         JavaRDD<Row> userBaseInfoRDD = userBaseInfo.toJavaRDD();
         JavaPairRDD<Long, Row> userActionLogPairRDD = userActionLogRDD.mapToPair(row -> {
-            return new Tuple2(row.getAs(5), row);
+            return new Tuple2(row.getAs(4), row);
         });
         JavaPairRDD<Long, Row> userBaseInfoPairRDD = userBaseInfoRDD.mapToPair(row -> {
-            return new Tuple2<>(row.getAs(0), row);
+            return new Tuple2<>(row.getAs(1), row);
         });
 
         // join之后得到的是 <Long, Tuple2<Row, Row>>
@@ -71,7 +83,7 @@ public class UserActiveDegreeAnalyze extends BaseService {
            while (iterator.hasNext()) {
                Tuple2<Row, Row> tuple = iterator.next();
                 if(count < 1){
-                    username = tuple._1.getString(1);
+                    username = tuple._1.getString(2);
                 }
                 count ++;
            }
@@ -90,7 +102,7 @@ public class UserActiveDegreeAnalyze extends BaseService {
          * 看到别人的scala版实现，我居然不会写java版的了。是RDD还是sparksql还是DataSet，极度混乱。。。
          * 1. RDD编程：将DataSet转为JavaRDD，然后用算子mapToPair成tuple2才能join？？？太麻烦了吧受不了。
          * 2. SparkSql：将DataSet注册为表，然后使用sql语句来join。
-         *
+         * 3. Dataset编程：直接使用Dataset的转换算子。
          userActionLog
                 // 第一步：过滤数据，找到指定时间范围内的数据
                 .filter("actionTime >= '" + startDate + "' and actionTime <= '" + endDate + "' and actionType = 0")
@@ -131,11 +143,194 @@ public class UserActiveDegreeAnalyze extends BaseService {
             System.out.println(username + "购买的金额: " + money);
         }
 
+        // 功能三：统计最近一个周期相比上一个周期访问次数增长最多的10个用户
+        // 解决思路：上一周期的每次访问设为 -1， 现在的这一周期的每次访问设为 +1。然后相同用户的相加，就得到这一周期的用户访问相比上一周期多出多少次。
+        String firstPeriodBegin = CalanderUtils.getLastCycle(CalanderUtils.MONTH_CYCLE, -1);
+        String firstPeriodEnd = CalanderUtils.getLastCycle(CalanderUtils.MONTH_CYCLE, 0);
+        String now = DateUtils.formatDateTime(new Date());
+
+        // Dataset<Row> 转 DataSet<UserActionLog> : https://spark.apache.org/docs/2.4.0/api/java/org/apache/spark/sql/Dataset.html
+        Dataset<UserActionLogVO> userActionLogInFirstPeriod = userActionLog.as(Encoders.bean(UserActionLog.class))
+                .filter("actionTime > '" + firstPeriodBegin + "' and actionTime <= '" + firstPeriodEnd + "' and actionType = 0")
+                // map一直提示不支持，一看api，原来是要这样写 Encoders在后面，然后还要添加一个转换在前面才能构造UserActionLogVO，java真难写啊。
+                .map((MapFunction<UserActionLog, UserActionLogVO>) userActionLogEntry -> {
+                    return  new UserActionLogVO(userActionLogEntry.getLogId(), userActionLogEntry.getUserId(), -1L);
+                }, Encoders.bean(UserActionLogVO.class));
+
+        Dataset<UserActionLogVO> userActionLogInSecondPeriod = userActionLog.as(Encoders.bean(UserActionLog.class))
+                .filter("actionTime > '" + firstPeriodEnd + "' and actionTime <= '" + now + "' and actionType = 0")
+                .map((MapFunction<UserActionLog, UserActionLogVO>) userActionLogEntry -> {
+                    return new UserActionLogVO(userActionLogEntry.getLogId(), userActionLogEntry.getUserId(), 1L);
+                }, Encoders.bean(UserActionLogVO.class));
+
+        Dataset<UserActionLogVO> userActionLogVo = userActionLogInFirstPeriod.union(userActionLogInSecondPeriod);
+
+        // 前两个功能没有看api，将dataset转成rdd来做，画蛇添足了。
+        userActionLogVo.join(userBaseInfo, userActionLogVo.col("userId").equalTo(userBaseInfo.col("userId")))
+                .groupBy(userBaseInfo.col("userId"), userBaseInfo.col("username"))
+                // 点进去agg的方法描述就知道这样写了
+                .agg(sum("actionValue").alias("actionIncr"))
+                .sort(col("actionIncr").desc())
+                .limit(10)
+                .show();
 
 
+        // 功能四 最近周期内相对之前一个周期购买商品金额增长最快的10个用户。
+        Dataset<UserActionLogMoneyVO> aa = userActionLog.as(Encoders.bean(UserActionLog.class))
+                .filter("actionTime > '" + firstPeriodBegin + "' and actionTime <= '" + firstPeriodEnd + "' and actionType = 0")
+                // map一直提示不支持，一看api，原来是要这样写 Encoders在后面，然后还要添加一个转换在前面才能构造UserActionLogVO，java真难写啊。
+                .map((MapFunction<UserActionLog, UserActionLogMoneyVO>) userActionLogEntry -> {
+                    return  new UserActionLogMoneyVO(userActionLogEntry.getLogId(), userActionLogEntry.getUserId(), userActionLogEntry.getPurchaseMoney());
+                }, Encoders.bean(UserActionLogMoneyVO.class));
+        Dataset<UserActionLogMoneyVO> bb = userActionLog.as(Encoders.bean(UserActionLog.class))
+                .filter("actionTime > '" + firstPeriodEnd + "' and actionTime <= '" + now + "' and actionType = 0")
+                .map((MapFunction<UserActionLog, UserActionLogMoneyVO>) userActionLogEntry -> {
+                    return new UserActionLogMoneyVO(userActionLogEntry.getLogId(), userActionLogEntry.getUserId(), userActionLogEntry.getPurchaseMoney());
+                }, Encoders.bean(UserActionLogMoneyVO.class));
+        Dataset<UserActionLogMoneyVO> userActionLogMoneyVo = aa.union(bb);
 
+        userActionLogMoneyVo.join(userBaseInfo, userActionLogMoneyVo.col("userId").equalTo(userBaseInfo.col("userId")))
+                .groupBy(userBaseInfo.col("userId"), userBaseInfo.col("username"))
+                .agg(round(sum("purchaseMoney"), 2).alias("purchaseMoneyIncr"))
+                .sort(col("purchaseMoneyIncr").desc())
+                .limit(10)
+                .show();
 
+        // 统计指定注册时间范围内，每个用户注册头7天访问次数最高的10个用户
+        userActionLogDS.join(userBaseInfo, userActionLogDS.col("userId").equalTo(userBaseInfo.col("userId")))
+                .filter(userBaseInfo.col("registTime").gt(startDate).and(userBaseInfo.col("registTime").leq(endDate)))
+                .filter(userActionLogDS.col("actionTime").leq(date_add(userBaseInfo.col("registTime"), 7)))
+                .groupBy(userBaseInfo.col("userId"), userBaseInfo.col("username"))
+                .agg(count("logId").alias("actionCount"))
+                .sort(col("actionCount"))
+                .limit(10)
+                .show();
 
         return null;
     }
+
+
+    public static class UserActionLogMoneyVO implements Serializable {
+        Long logId;
+        Long userId;
+        Double purchaseMoney;
+
+
+        public UserActionLogMoneyVO(Long logId, Long userId, Double purchaseMoney) {
+            this.logId = logId;
+            this.userId = userId;
+            this.purchaseMoney = purchaseMoney;
+        }
+
+        public Long getLogId() {
+            return logId;
+        }
+
+        public void setLogId(Long logId) {
+            this.logId = logId;
+        }
+
+        public Long getUserId() {
+            return userId;
+        }
+
+        public void setUserId(Long userId) {
+            this.userId = userId;
+        }
+
+        public Double getPurchaseMoney() {
+            return purchaseMoney;
+        }
+
+        public void setPurchaseMoney(Double purchaseMoney) {
+            this.purchaseMoney = purchaseMoney;
+        }
+    }
+
+    public static class UserActionLog implements Serializable {
+        Long logId;
+        Long userId;
+        String actionTime;
+        Long actionType;
+        Double purchaseMoney;
+
+        public Long getLogId() {
+            return logId;
+        }
+
+        public void setLogId(Long logId) {
+            this.logId = logId;
+        }
+
+        public Long getUserId() {
+            return userId;
+        }
+
+        public void setUserId(Long userId) {
+            this.userId = userId;
+        }
+
+        public String getActionTime() {
+            return actionTime;
+        }
+
+        public void setActionTime(String actionTime) {
+            this.actionTime = actionTime;
+        }
+
+        public Long getActionType() {
+            return actionType;
+        }
+
+        public void setActionType(Long actionType) {
+            this.actionType = actionType;
+        }
+
+        public Double getPurchaseMoney() {
+            return purchaseMoney;
+        }
+
+        public void setPurchaseMoney(Double purchaseMoney) {
+            this.purchaseMoney = purchaseMoney;
+        }
+
+    }
+
+    public static class UserActionLogVO implements Serializable {
+        Long logId;
+        Long userId;
+        Long actionValue;
+
+
+        public UserActionLogVO(Long logId, Long userId, Long actionValue) {
+            this.logId = logId;
+            this.userId = userId;
+            this.actionValue = actionValue;
+        }
+
+        public Long getLogId() {
+            return logId;
+        }
+
+        public void setLogId(Long logId) {
+            this.logId = logId;
+        }
+
+        public Long getUserId() {
+            return userId;
+        }
+
+        public void setUserId(Long userId) {
+            this.userId = userId;
+        }
+
+        public Long getActionValue() {
+            return actionValue;
+        }
+
+        public void setActionValue(Long actionValue) {
+            this.actionValue = actionValue;
+        }
+    }
+
 }

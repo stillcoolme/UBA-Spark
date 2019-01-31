@@ -1,24 +1,89 @@
 /*
-Navicat MySQL Data Transfer
-
-Source Server         : localhost
-Source Server Version : 50703
-Source Host           : localhost:3306
-Source Database       : spark_abs
-
-Target Server Type    : MYSQL
-Target Server Version : 50703
-File Encoding         : 65001
-
-Date: 2018-12-10 20:42:22
+SQLyog Enterprise v12.09 (64 bit)
+MySQL - 5.7.3-m13 : Database - spark_abs
+*********************************************************************
 */
 
-SET FOREIGN_KEY_CHECKS=0;
 
--- ----------------------------
--- Table structure for area_top3_product
--- ----------------------------
+/*!40101 SET NAMES utf8 */;
+
+/*!40101 SET SQL_MODE=''*/;
+
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+CREATE DATABASE /*!32312 IF NOT EXISTS*/`spark_abs` /*!40100 DEFAULT CHARACTER SET utf8 */;
+
+USE `spark_abs`;
+
+/*Table structure for table `ad_blacklist` */
+
+DROP TABLE IF EXISTS `ad_blacklist`;
+
+CREATE TABLE `ad_blacklist` (
+  `user_id` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+/*Data for the table `ad_blacklist` */
+
+/*Table structure for table `ad_click_trend` */
+
+DROP TABLE IF EXISTS `ad_click_trend`;
+
+CREATE TABLE `ad_click_trend` (
+  `date` varchar(30) DEFAULT NULL,
+  `ad_id` int(11) DEFAULT NULL,
+  `minute` varchar(30) DEFAULT NULL,
+  `click_count` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+/*Data for the table `ad_click_trend` */
+
+/*Table structure for table `ad_province_top3` */
+
+DROP TABLE IF EXISTS `ad_province_top3`;
+
+CREATE TABLE `ad_province_top3` (
+  `date` varchar(30) DEFAULT NULL,
+  `province` varchar(100) DEFAULT NULL,
+  `ad_id` int(11) DEFAULT NULL,
+  `click_count` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+/*Data for the table `ad_province_top3` */
+
+/*Table structure for table `ad_stat` */
+
+DROP TABLE IF EXISTS `ad_stat`;
+
+CREATE TABLE `ad_stat` (
+  `date` varchar(30) DEFAULT NULL,
+  `province` varchar(100) DEFAULT NULL,
+  `city` varchar(100) DEFAULT NULL,
+  `ad_id` int(11) DEFAULT NULL,
+  `click_count` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+/*Data for the table `ad_stat` */
+
+/*Table structure for table `ad_user_click_count` */
+
+DROP TABLE IF EXISTS `ad_user_click_count`;
+
+CREATE TABLE `ad_user_click_count` (
+  `date` varchar(30) DEFAULT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `ad_id` int(11) DEFAULT NULL,
+  `click_count` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+/*Data for the table `ad_user_click_count` */
+
+/*Table structure for table `area_top3_product` */
+
 DROP TABLE IF EXISTS `area_top3_product`;
+
 CREATE TABLE `area_top3_product` (
   `task_id` int(11) DEFAULT NULL,
   `area` varchar(255) DEFAULT NULL,
@@ -30,169 +95,53 @@ CREATE TABLE `area_top3_product` (
   `product_status` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of area_top3_product
--- ----------------------------
+/*Data for the table `area_top3_product` */
 
--- ----------------------------
--- Table structure for city_info
--- ----------------------------
+/*Table structure for table `city_info` */
+
 DROP TABLE IF EXISTS `city_info`;
+
 CREATE TABLE `city_info` (
   `city_id` bigint(11) DEFAULT NULL,
   `city_name` varchar(255) DEFAULT NULL,
   `area` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of city_info
--- ----------------------------
-INSERT INTO `city_info` VALUES ('0', 'Beijing', 'China North');
-INSERT INTO `city_info` VALUES ('1', 'Shanghai', 'China East');
-INSERT INTO `city_info` VALUES ('2', 'Nanjing', 'China East');
-INSERT INTO `city_info` VALUES ('3', 'Guangzhou', 'China South');
-INSERT INTO `city_info` VALUES ('4', 'Sanya', 'China South');
-INSERT INTO `city_info` VALUES ('5', 'Wuhan', 'China Middle');
-INSERT INTO `city_info` VALUES ('6', 'Changsha', 'China Middle');
-INSERT INTO `city_info` VALUES ('7', 'Xian', 'China North');
-INSERT INTO `city_info` VALUES ('8', 'Chengdu', 'China South');
-INSERT INTO `city_info` VALUES ('9', 'Haerbin', 'China North');
-INSERT INTO `city_info` VALUES ('10', 'XIzang', 'China North');
+/*Data for the table `city_info` */
 
--- ----------------------------
--- Table structure for page_split_convert_rate
--- ----------------------------
+insert  into `city_info`(`city_id`,`city_name`,`area`) values (0,'Beijing','China North'),(1,'Shanghai','China East'),(2,'Nanjing','China East'),(3,'Guangzhou','China South'),(4,'Sanya','China South'),(5,'Wuhan','China Middle'),(6,'Changsha','China Middle'),(7,'Xian','China North'),(8,'Chengdu','China South'),(9,'Haerbin','China North'),(10,'XIzang','China North');
+
+/*Table structure for table `page_split_convert_rate` */
+
 DROP TABLE IF EXISTS `page_split_convert_rate`;
+
 CREATE TABLE `page_split_convert_rate` (
   `taskid` int(11) DEFAULT NULL,
   `convert_rate` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of page_split_convert_rate
--- ----------------------------
-INSERT INTO `page_split_convert_rate` VALUES ('3', '1_2=0.1|2_3=0.87|3_4=1.23|4_5=0.92');
-INSERT INTO `page_split_convert_rate` VALUES ('3', '1_2=0.09|2_3=0.96|3_4=1.05|4_5=1.12');
-INSERT INTO `page_split_convert_rate` VALUES ('3', '1_2=0.1|2_3=1.0|3_4=1.22|4_5=0.83');
+/*Data for the table `page_split_convert_rate` */
 
--- ----------------------------
--- Table structure for product_info
--- ----------------------------
+insert  into `page_split_convert_rate`(`taskid`,`convert_rate`) values (3,'1_2=0.1|2_3=0.87|3_4=1.23|4_5=0.92'),(3,'1_2=0.09|2_3=0.96|3_4=1.05|4_5=1.12'),(3,'1_2=0.1|2_3=1.0|3_4=1.22|4_5=0.83');
+
+/*Table structure for table `product_info` */
+
 DROP TABLE IF EXISTS `product_info`;
+
 CREATE TABLE `product_info` (
   `id` int(11) NOT NULL,
   `product_name` varchar(255) DEFAULT NULL,
   `info` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of product_info
--- ----------------------------
-INSERT INTO `product_info` VALUES ('0', 'product0', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('1', 'product1', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('2', 'product2', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('3', 'product3', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('4', 'product4', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('5', 'product5', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('6', 'product6', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('7', 'product7', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('8', 'product8', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('9', 'product9', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('10', 'product10', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('11', 'product11', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('12', 'product12', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('13', 'product13', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('14', 'product14', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('15', 'product15', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('16', 'product16', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('17', 'product17', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('18', 'product18', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('19', 'product19', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('20', 'product20', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('21', 'product21', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('22', 'product22', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('23', 'product23', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('24', 'product24', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('25', 'product25', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('26', 'product26', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('27', 'product27', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('28', 'product28', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('29', 'product29', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('30', 'product30', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('31', 'product31', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('32', 'product32', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('33', 'product33', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('34', 'product34', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('35', 'product35', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('36', 'product36', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('37', 'product37', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('38', 'product38', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('39', 'product39', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('40', 'product40', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('41', 'product41', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('42', 'product42', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('43', 'product43', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('44', 'product44', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('45', 'product45', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('46', 'product46', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('47', 'product47', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('48', 'product48', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('49', 'product49', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('50', 'product50', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('51', 'product51', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('52', 'product52', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('53', 'product53', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('54', 'product54', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('55', 'product55', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('56', 'product56', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('57', 'product57', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('58', 'product58', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('59', 'product59', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('60', 'product60', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('61', 'product61', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('62', 'product62', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('63', 'product63', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('64', 'product64', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('65', 'product65', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('66', 'product66', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('67', 'product67', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('68', 'product68', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('69', 'product69', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('70', 'product70', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('71', 'product71', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('72', 'product72', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('73', 'product73', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('74', 'product74', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('75', 'product75', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('76', 'product76', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('77', 'product77', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('78', 'product78', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('79', 'product79', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('80', 'product80', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('81', 'product81', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('82', 'product82', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('83', 'product83', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('84', 'product84', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('85', 'product85', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('86', 'product86', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('87', 'product87', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('88', 'product88', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('89', 'product89', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('90', 'product90', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('91', 'product91', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('92', 'product92', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('93', 'product93', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('94', 'product94', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('95', 'product95', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('96', 'product96', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('97', 'product97', '{\"product_status\":1}');
-INSERT INTO `product_info` VALUES ('98', 'product98', '{\"product_status\":0}');
-INSERT INTO `product_info` VALUES ('99', 'product99', '{\"product_status\":0}');
+/*Data for the table `product_info` */
 
--- ----------------------------
--- Table structure for session_aggr_stat
--- ----------------------------
+insert  into `product_info`(`id`,`product_name`,`info`) values (0,'product0','{\"product_status\":1}'),(1,'product1','{\"product_status\":1}'),(2,'product2','{\"product_status\":0}'),(3,'product3','{\"product_status\":1}'),(4,'product4','{\"product_status\":1}'),(5,'product5','{\"product_status\":0}'),(6,'product6','{\"product_status\":1}'),(7,'product7','{\"product_status\":1}'),(8,'product8','{\"product_status\":1}'),(9,'product9','{\"product_status\":1}'),(10,'product10','{\"product_status\":1}'),(11,'product11','{\"product_status\":1}'),(12,'product12','{\"product_status\":0}'),(13,'product13','{\"product_status\":1}'),(14,'product14','{\"product_status\":0}'),(15,'product15','{\"product_status\":0}'),(16,'product16','{\"product_status\":0}'),(17,'product17','{\"product_status\":0}'),(18,'product18','{\"product_status\":1}'),(19,'product19','{\"product_status\":0}'),(20,'product20','{\"product_status\":0}'),(21,'product21','{\"product_status\":0}'),(22,'product22','{\"product_status\":1}'),(23,'product23','{\"product_status\":1}'),(24,'product24','{\"product_status\":1}'),(25,'product25','{\"product_status\":1}'),(26,'product26','{\"product_status\":1}'),(27,'product27','{\"product_status\":1}'),(28,'product28','{\"product_status\":1}'),(29,'product29','{\"product_status\":1}'),(30,'product30','{\"product_status\":0}'),(31,'product31','{\"product_status\":1}'),(32,'product32','{\"product_status\":1}'),(33,'product33','{\"product_status\":1}'),(34,'product34','{\"product_status\":0}'),(35,'product35','{\"product_status\":0}'),(36,'product36','{\"product_status\":1}'),(37,'product37','{\"product_status\":1}'),(38,'product38','{\"product_status\":1}'),(39,'product39','{\"product_status\":1}'),(40,'product40','{\"product_status\":1}'),(41,'product41','{\"product_status\":0}'),(42,'product42','{\"product_status\":0}'),(43,'product43','{\"product_status\":1}'),(44,'product44','{\"product_status\":0}'),(45,'product45','{\"product_status\":0}'),(46,'product46','{\"product_status\":1}'),(47,'product47','{\"product_status\":0}'),(48,'product48','{\"product_status\":0}'),(49,'product49','{\"product_status\":1}'),(50,'product50','{\"product_status\":0}'),(51,'product51','{\"product_status\":1}'),(52,'product52','{\"product_status\":1}'),(53,'product53','{\"product_status\":0}'),(54,'product54','{\"product_status\":0}'),(55,'product55','{\"product_status\":1}'),(56,'product56','{\"product_status\":0}'),(57,'product57','{\"product_status\":0}'),(58,'product58','{\"product_status\":0}'),(59,'product59','{\"product_status\":0}'),(60,'product60','{\"product_status\":0}'),(61,'product61','{\"product_status\":0}'),(62,'product62','{\"product_status\":0}'),(63,'product63','{\"product_status\":0}'),(64,'product64','{\"product_status\":0}'),(65,'product65','{\"product_status\":1}'),(66,'product66','{\"product_status\":0}'),(67,'product67','{\"product_status\":1}'),(68,'product68','{\"product_status\":0}'),(69,'product69','{\"product_status\":1}'),(70,'product70','{\"product_status\":0}'),(71,'product71','{\"product_status\":1}'),(72,'product72','{\"product_status\":1}'),(73,'product73','{\"product_status\":0}'),(74,'product74','{\"product_status\":0}'),(75,'product75','{\"product_status\":0}'),(76,'product76','{\"product_status\":0}'),(77,'product77','{\"product_status\":1}'),(78,'product78','{\"product_status\":0}'),(79,'product79','{\"product_status\":0}'),(80,'product80','{\"product_status\":0}'),(81,'product81','{\"product_status\":0}'),(82,'product82','{\"product_status\":1}'),(83,'product83','{\"product_status\":1}'),(84,'product84','{\"product_status\":0}'),(85,'product85','{\"product_status\":1}'),(86,'product86','{\"product_status\":1}'),(87,'product87','{\"product_status\":1}'),(88,'product88','{\"product_status\":1}'),(89,'product89','{\"product_status\":1}'),(90,'product90','{\"product_status\":1}'),(91,'product91','{\"product_status\":0}'),(92,'product92','{\"product_status\":0}'),(93,'product93','{\"product_status\":0}'),(94,'product94','{\"product_status\":0}'),(95,'product95','{\"product_status\":1}'),(96,'product96','{\"product_status\":1}'),(97,'product97','{\"product_status\":1}'),(98,'product98','{\"product_status\":0}'),(99,'product99','{\"product_status\":0}');
+
+/*Table structure for table `session_aggr_stat` */
+
 DROP TABLE IF EXISTS `session_aggr_stat`;
+
 CREATE TABLE `session_aggr_stat` (
   `task_id` int(11) NOT NULL,
   `session_count` int(11) DEFAULT NULL,
@@ -214,14 +163,12 @@ CREATE TABLE `session_aggr_stat` (
   PRIMARY KEY (`task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of session_aggr_stat
--- ----------------------------
+/*Data for the table `session_aggr_stat` */
 
--- ----------------------------
--- Table structure for session_detail
--- ----------------------------
+/*Table structure for table `session_detail` */
+
 DROP TABLE IF EXISTS `session_detail`;
+
 CREATE TABLE `session_detail` (
   `task_id` int(11) NOT NULL,
   `user_id` int(11) DEFAULT NULL,
@@ -238,14 +185,12 @@ CREATE TABLE `session_detail` (
   KEY `task_id` (`task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of session_detail
--- ----------------------------
+/*Data for the table `session_detail` */
 
--- ----------------------------
--- Table structure for session_random_extract
--- ----------------------------
+/*Table structure for table `session_random_extract` */
+
 DROP TABLE IF EXISTS `session_random_extract`;
+
 CREATE TABLE `session_random_extract` (
   `task_id` int(11) NOT NULL,
   `session_id` varchar(255) DEFAULT NULL,
@@ -254,14 +199,12 @@ CREATE TABLE `session_random_extract` (
   `click_category_id` varchar(1024) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of session_random_extract
--- ----------------------------
+/*Data for the table `session_random_extract` */
 
--- ----------------------------
--- Table structure for task
--- ----------------------------
+/*Table structure for table `task` */
+
 DROP TABLE IF EXISTS `task`;
+
 CREATE TABLE `task` (
   `task_id` int(11) NOT NULL AUTO_INCREMENT,
   `task_name` varchar(255) DEFAULT NULL,
@@ -272,20 +215,16 @@ CREATE TABLE `task` (
   `task_status` varchar(255) DEFAULT NULL,
   `task_param` text,
   PRIMARY KEY (`task_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of task
--- ----------------------------
-INSERT INTO `task` VALUES ('1', 'findfood', '2018-01-01 12:11:10', '2018-01-01 12:11:10', '2018-01-01 14:11:10', '1', '1', '{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\",\"startAge\":10,\"endAge\":60,\"keywords\":\"火锅,美女,面包\"}');
-INSERT INTO `task` VALUES ('2', 'tech', '2018-01-01 12:11:10', '2018-01-01 12:11:10', '2018-01-01 14:11:10', '1', '1', '{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\",\"startAge\":30,\"endAge\":50,\"keywords\":\"java\"}');
-INSERT INTO `task` VALUES ('3', 'page_convert', '2018-01-01 12:11:10', '2018-01-01 12:11:10', '2018-01-01 14:11:10', '2', '1', '{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\",\"targetPageFlow\":\"1,2,3,4,5\"}');
-INSERT INTO `task` VALUES ('4', 'hotproduct', '2018-01-01 12:11:10', '2018-01-01 12:11:10', '2018-01-01 14:11:10', '3', '1', '{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\"}');
+/*Data for the table `task` */
 
--- ----------------------------
--- Table structure for test_user
--- ----------------------------
+insert  into `task`(`task_id`,`task_name`,`create_time`,`start_time`,`finish_time`,`task_type`,`task_status`,`task_param`) values (1,'findfood','2018-01-01 12:11:10','2018-01-01 12:11:10','2018-01-01 14:11:10','1','1','{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\",\"startAge\":10,\"endAge\":60,\"keywords\":\"火锅,美女,面包\"}'),(2,'tech','2018-01-01 12:11:10','2018-01-01 12:11:10','2018-01-01 14:11:10','1','1','{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\",\"startAge\":30,\"endAge\":50,\"keywords\":\"java\"}'),(3,'page_convert','2018-01-01 12:11:10','2018-01-01 12:11:10','2018-01-01 14:11:10','2','1','{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\",\"targetPageFlow\":\"1,2,3,4,5\"}'),(4,'hotproduct','2018-01-01 12:11:10','2018-01-01 12:11:10','2018-01-01 14:11:10','3','1','{\"startDate\":\"2018-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\"}'),(5,'useractive','2018-01-01 12:11:10','2018-01-01 12:11:10','2018-01-01 12:11:10','4','1','{\"startDate\":\"2016-10-14 10:00:00\",\"endDate\":\"2019-11-21 10:00:00\"}');
+
+/*Table structure for table `test_user` */
+
 DROP TABLE IF EXISTS `test_user`;
+
 CREATE TABLE `test_user` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(255) DEFAULT NULL,
@@ -293,19 +232,14 @@ CREATE TABLE `test_user` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of test_user
--- ----------------------------
-INSERT INTO `test_user` VALUES ('1', '张三', '25');
-INSERT INTO `test_user` VALUES ('4', '李四', '26');
-INSERT INTO `test_user` VALUES ('5', '王二', '28');
-INSERT INTO `test_user` VALUES ('6', '麻子', '30');
-INSERT INTO `test_user` VALUES ('7', '王五', '35');
+/*Data for the table `test_user` */
 
--- ----------------------------
--- Table structure for top10_category
--- ----------------------------
+insert  into `test_user`(`id`,`name`,`age`) values (1,'张三',25),(4,'李四',26),(5,'王二',28),(6,'麻子',30),(7,'王五',35);
+
+/*Table structure for table `top10_category` */
+
 DROP TABLE IF EXISTS `top10_category`;
+
 CREATE TABLE `top10_category` (
   `task_id` int(11) NOT NULL,
   `category_id` int(11) DEFAULT NULL,
@@ -314,14 +248,12 @@ CREATE TABLE `top10_category` (
   `pay_count` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of top10_category
--- ----------------------------
+/*Data for the table `top10_category` */
 
--- ----------------------------
--- Table structure for top10_category_session
--- ----------------------------
+/*Table structure for table `top10_category_session` */
+
 DROP TABLE IF EXISTS `top10_category_session`;
+
 CREATE TABLE `top10_category_session` (
   `task_id` int(11) NOT NULL,
   `category_id` int(11) DEFAULT NULL,
@@ -329,14 +261,12 @@ CREATE TABLE `top10_category_session` (
   `click_count` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of top10_category_session
--- ----------------------------
+/*Data for the table `top10_category_session` */
 
--- ----------------------------
--- Table structure for top10_session
--- ----------------------------
+/*Table structure for table `top10_session` */
+
 DROP TABLE IF EXISTS `top10_session`;
+
 CREATE TABLE `top10_session` (
   `task_id` int(11) DEFAULT NULL,
   `category_id` int(11) DEFAULT NULL,
@@ -345,6 +275,9 @@ CREATE TABLE `top10_session` (
   KEY `idx_task_id` (`task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
--- ----------------------------
--- Records of top10_session
--- ----------------------------
+/*Data for the table `top10_session` */
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;

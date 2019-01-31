@@ -149,9 +149,13 @@ Kryo序列化机制，一旦启用以后，会生效的几个地方：
 2、持久化RDD时进行序列化，StorageLevel.MEMORY_ONLY_SER
 3、shuffle
 
-第一步：```SparkConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")```
+第一步：
+```
+SparkConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+```
 第二步，注册你使用到的，需要通过Kryo序列化的自定义类。
-```SparkConf.registerKryoClasses(new Class[]{CategorySortKey.class});
+```
+SparkConf.registerKryoClasses(new Class[]{CategorySortKey.class});
 ```
 Kryo要求，如果要达到它的最佳性能的话，那么就一定要注册你自定义的类（比如，你的算子函数中使用到了外部自定义类型的对象变量，这时，就要求必须注册你的类，否则Kryo达不到最佳性能）。
 
@@ -211,49 +215,51 @@ new SparkConf()
 
 ## 1.5 JVM调优
 
-**降低cache操作的内存占比**
+### 首先估计GC的影响
 
-每一次放对象的时候，都是放入eden区域，和其中一个survivor1 区域；另外一个survivor2 区域是空闲的。
+GC调优的第一步就是去统计GC发生的频率和GC消耗时间。
+通过添加[Java配置](http://spark.apache.org/docs/latest/configuration.html#Dynamically-Loading-Spark-Properties)：```-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps```
+在作业运行的时候能够看到worker的日志里面在每次GC的时候就打印出GC信息。
 
-当eden区域和一个survivor区域放满了以后，就会触发minor gc。
-如果你的JVM内存不够大的话，可能导致频繁的年轻代OOM，频繁的进行minor gc。
-频繁的minor gc会导致短时间内，有些存活的对象，多次垃圾回收都没有回收掉。会导致这种短声明周期对象，年龄过大，垃圾回收次数太多还没有回收到。
+### 了解GC相关原理
+了解更多GC调优方法前我们需要了解JVM内存管理：
+* Java Heap space 被分成 Young 和 Old 两个regions。Young generation 顾名思义保存短期使用的对象，而 Old generation 用于保存有更长使用周期的对象。
+* Young generation 被细分成三个regions：[Eden, Survivor1, Survivor2]。
+* 简述GC：当 Eden 空间满了, Eden 会进行一次较小的minor GC，依然存活的对象会从Eden and Survivor1 复制到 Survivor2。当Survivor2的对象 object 足够老或者 Survivor2 空间满了, 对象就会被移到 Old。最后当 Old 空间也接近使用完，就会发生full GC。
 
-minor gc后会将存活下来的对象，放入之前空闲的那一个survivor区域中。
-这里可能会出现一个问题。
-默认eden、survior1和survivor2的内存占比是8:1:1。问题是，如果存活下来的对象是1.5，一个survivor区域放不下。
-此时就可能通过JVM的担保机制，将多余的对象，直接放入老年代了。导致老年代囤积一大堆，短生命周期的，本来应该在年轻代中的，可能马上就要被回收掉的对象。
+GC调优的目标是保证只有长期存活的RDD被存储在Old generation，Young generation有足够的空间存储短期的对象。
+这样就能避免full GC将作业执行时创建的短期的对象也回收掉。
 
-老年代有许多对象可能导致老年代频繁满溢。频繁进行full gc。
-full gc由于这个算法的设计，考虑老年代中的对象数量很少，满溢进行full gc的频率应该很少，因此采取了不太复杂，但是耗费性能和时间的垃圾回收算法。
+* 确保没有频繁major GC。
+只要将Eden的内存设置成大于每个task需要的内存大小。如果Eden 大小设置为 E,  Young generation 则设置成 -Xmn=4/3*E。如果Eden的内存太小的话，可能会频繁的进行minor gc，导致短时间内，有些存活的对象在多次垃圾回收都没有回收掉。结果短生命周期对象，年龄过大，垃圾回收多次还没有回收到。
 
-内存不充足的时候，问题：
-1、频繁minor gc，也会导致频繁spark停止工作
-2、老年代囤积大量活跃对象（短生命周期的对象），导致频繁full gc，导致jvm的工作线程停止工作，spark停止工作。等着垃圾回收结束。
+* minor gc后会将存活下来的对象，放入之前空闲的那一个survivor区域中。
+这里可能会出现一个问题。默认eden、survior1和survivor2的内存占比是8:1:1。如果存活下来的对象是1.5，一个survivor区域放不下。
+就可能通过JVM的担保机制，将多余的对象，直接放入老年代了。导致老年代囤积一大堆短生命周期的原本需要快点回收的对象。
+导致full gc。由于考虑老年代中的对象数量很少，满溢进行full gc的频率应该很少，因此采取了不太复杂，但是耗费性能和时间的垃圾回收算法。
 
+* 如果OldGen将要完全占满，可以减少spark.memory.fraction。另外可以考虑减少Young generation的大小通过调低 -Xmn。
+否则，尝试改变JVM的NewRatio参数，一般JVM默认设置是2，含义是Old generation占用了 2/3的 heap内存。应该设置得足够大超过并超过spark.memory.fraction。
 
-spark中，堆内存又被划分成了两块，一块儿是专门用来给RDD的cache、persist操作进行RDD数据缓存用的；另外一块，用来给spark算子函数的运行使用的，存放函数中自己创建的对象。
-默认情况下，给RDD cache操作的内存占比是60%。但是如果某些情况下，task算子函数中创建的对象过多，然后内存又不太大，导致了频繁的minor gc，甚至频繁full gc，导致spark频繁的停止工作。性能影响会很大。
+* 尝试使用G1GC 收集器 通过配置 -XX:+UseG1GC 。这能够提高一些情况下的回收性能。
+如果executor需要大的堆内存，那么通过配置-XX:G1HeapRegionSize来提高G1 region size 是很重要的。
 
-针对上述这种情况，大家可以在之前我们讲过的那个spark ui。yarn去运行的话，那么就通过yarn的界面，去查看你的spark作业的运行统计，很简单，大家一层一层点击进去就好。可以看到每个stage的运行情况，包括每个task的运行时间、gc时间等等。如果发现gc太频繁，时间太长。此时就可以适当调价这个比例。
+* 如果作业从HDFS中读取数据，可以通过作业使用的block大小推测使用的内存大小，读取出来的block通常是存储大小的2-3倍，所以如果我们希望有4个作业去使用一个HDFS的128MB的block，我们预估Eden需要4*3*128MB。
 
 降低cache操作的内存占比，大不了用persist操作，选择将一部分缓存的RDD数据写入磁盘，或者序列化方式，配合Kryo序列化类，减少RDD缓存的内存占用；降低cache操作内存占比；对应的，算子函数的内存占比就提升了。
 一句话，让task执行算子函数时，有更多的内存可以使用。
 spark-submit脚本里面，去用--conf的方式，去添加配置：
 ```
---conf spark.storage.memoryFraction，0.6 -> 0.5 -> 0.4 -> 0.2
+--conf spark.memory.fraction，0.6 -> 0.5 -> 0.4 -> 0.2
 --conf spark.shuffle.memoryFraction=0.3
 ```
 
-
-====================
-
-**调节executor堆外内存**
+### 调节executor堆外内存
 
 executor堆外内存
 
-有时候，如果你的spark作业处理的数据量特别特别大；然后spark作业一运行，时不时的报错，shuffle file cannot find，executor、task lost，out of memory（内存溢出）；
-
+有时候，如果你的spark作业处理的数据量特别特别大；
+然后spark作业一运行，时不时的报错，shuffle file cannot find，executor、task lost，out of memory（内存溢出）；
 可能是说executor的堆外内存不太够用，导致executor在运行的过程中会内存溢出；
 然后导致后续的stage的task在运行的时候，可能要从一些executor中去拉取shuffle map output文件，但是executor可能已经挂掉了，关联的Block manager也没有了；spark作业彻底崩溃。
 
@@ -268,10 +274,7 @@ spark-submit脚本里面，去用--conf的方式，去添加基于yarn的提交�
 ```
 默认情况下，这个堆外内存上限大概是300多M；真正处理大数据的时候，这里都会出现问题，导致spark作业反复崩溃，无法运行；此时就会去调节这个参数到至少1G（1024M），甚至说2G、4G。
 
-
-========================
-
-**调节连接等待时长**
+### 调节连接等待时长
 
 我们知道 Executor，优先从自己本地关联的BlockManager中获取某份数据。
 如果本地block manager没有的话，那么会通过TransferService，去远程连接其他节点上executor的block manager去获取。
@@ -284,8 +287,6 @@ spark默认的网络连接的超时时长，是60s；
 ```
 --conf spark.core.connection.ack.wait.timeout=300
 ```
-
-
 
 ## 1.6 Suffle调优
 
