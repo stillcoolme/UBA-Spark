@@ -498,11 +498,10 @@ spark-submit脚本中，加入以下配置即可：
 在执行shuffle操作的时候，是按照key，来进行values的数据的输出、拉取和聚合的。
 同一个key的values，一定是分配到一个reduce task进行处理的。
 假如多个key对应的values，总共是90万。
-可能某个key对应了88万数据，key-88万values，分配到一个task上去面去执行，执行很慢。而另外两个task，可能各分配到了1万数据，可能是数百个key，才对应的1万条数据。
-就出现数据倾斜。
-基本只可能是因为发生了shuffle操作，出现数据倾斜的问题。
-
-定位：在自己的程序里面找找，哪些地方用了会产生shuffle的算子，groupByKey、countByKey、reduceByKey、join。看log，看看是执行到了第几个stage。哪一个stage，task特别慢，就能够自己用肉眼去对你的spark代码进行stage的划分，就能够通过stage定位到你的代码，哪里发生了数据倾斜。
+可能某个key对应了88万数据，分配到一个task上去面去执行，执行很慢。而另外两个task，可能各几十个key分配到了1万数据，出现数据倾斜。
+定位：在自己的程序里面找找，哪些地方用了会产生shuffle的算子，groupByKey、countByKey、reduceByKey、join。
+看log，看看是执行到了第几个stage。
+哪一个stage，task特别慢或者只有一部分task在工作，就能够从spark代码的stage划分，通过stage定位到你的代码，哪里发生了数据倾斜。
 
 **第一个方案：聚合源数据**
 做一些聚合的操作：groupByKey、reduceByKey，说白了就是对每个key对应的values执行一定的计算。
