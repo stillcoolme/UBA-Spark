@@ -4,9 +4,9 @@
 2. 性能调优技术的实施；
 3. 实际经验中应用性能调优技术的经验总结；
 4. 掌握一整套复杂的Spark企业级性能调优解决方案；而不只是简单的一些性能调优技巧。
-5. 数据倾斜解决方案：针对写好的spark作业，实施一整套数据倾斜解决方案：实际经验中积累的数据倾斜现象的表现，以及处理后的效果总结
-6. troubleshooting：针对写好的spark作业，讲解实际经验中遇到的各种线上报错问题，以及解决方案
-7. 生产环境测试：Hive表
+5. 数据倾斜解决方案：针对写好的spark作业，实施一整套数据倾斜解决方案：实际经验中积累的数据倾斜现象的表现，以及处理后的效果总结。
+6. troubleshooting：针对写好的spark作业，讲解实际经验中遇到的各种线上报错问题，以及解决方案。
+
 
 调优，你要对spark的作业流程清楚：
 * Driver到Executor的结构；
@@ -21,70 +21,72 @@ Master: Driver
 * 作业划分为task分到Executor上，然后一个cpu core执行一个task；
 * BlockManager负责Executor，task的数据管理，task来它这里拿数据；
 
+
 ## 1.1 资源分配
 性能调优的王道：分配更多资源。
-1. 分配哪些资源？ executor、cpu per executor、memory per executor、driver memory
-2. 在哪里分配这些资源？
+* 分配哪些资源？ executor、cpu per executor、memory per executor、driver memory
+* 在哪里分配这些资源？
 在我们在生产环境中，提交spark作业时，用的spark-submit shell脚本，里面调整对应的参数
-
+```
 /usr/local/spark/bin/spark-submit \
 --class cn.spark.sparktest.core.WordCountCluster \
---driver-memory 100m \  配置driver的内存（影响不大）
---num-executors 3 \  配置executor的数量
---executor-memory 100m \  配置每个executor的内存大小
---executor-cores 3 \  配置每个executor的cpu core数量
+--driver-memory 1000m \     #driver的内存，影响不大，只要不出driver oom
+--num-executors 3 \         #executor的数量
+--executor-memory 100m \    #每个executor的内存大小
+--executor-cores 3 \        #每个executor的cpu core数量
 /usr/local/SparkTest-0.0.1-SNAPSHOT-jar-with-dependencies.jar \
+```
 
-3、调节到多大，算是最大呢？
-第一种，Spark Standalone，公司集群上，搭建了一套Spark集群，设置的时候，根据这个实际的情况，去调节每个spark作业的资源分配。
+### 调节到多大，算是最大呢？
+
+* 第一种，Spark Standalone 模式下资源分配。
+
 假如说一共20台机器，每台机器能使用4G内存，2个cpu core。
+```
 executor = 20，对应worker节点数量；
 executor-memory = 4G内存，对应每个worker能用的最大内存；
 executor-cores = 2，对应每个worker给每个executor能用的最多个cpu core。
+```
+
+* 第二种，Yarn模式资源队列下资源调度。
+
+应该去查看spark作业，要提交到的资源队列，大概有多少资源？
+一个原则，你能使用的资源有多大，就尽量去调节到最大的大小（executor的数量，几十个到上百个不等；
 
 
-第二种，Yarn。资源队列。资源调度。
-应该去查看spark作业，要提交到的资源队列，大概有多少资源？500G内存，100个cpu core；executor，50；10G内存，2个cpu core，平均每个executor。
+### 为什么调节了资源以后，性能可以提升？
 
-一个原则，你能使用的资源有多大，就尽量去调节到最大的大小（executor的数量，几十个到上百个不等；executor内存；executor cpu core最大）
+* num-executors：增加executor个数
 
-4、为什么调节了资源以后，性能可以提升？
-* executor-cores（增加每个executor的cpu core，增加了执行的并行能力）。
-原本20个executor，各有2个cpu core。能够并行40个task。
-现在每个executor的cpu core，增加到了5个。就能够并行执行100个task。
-执行的速度，提升了2.5倍。
-**但不超过服务器的cpu core数，不然会waiting**。
+    如果executor数量比较少，能够并行执行的task就少，Application的并行执行的能力就很弱。
 
-* executor-memory（增加每个executor的内存量）。
-增加了内存量以后，对性能的提升，有两点：
-1、如果需要对RDD进行cache，那么更多的内存，就可以缓存更多的数据，将更少的数据写入磁盘，甚至不写入磁盘。
-2、对于shuffle操作，reduce端，需要内存来存放拉取的数据并进行聚合。如果内存不够，会写入磁盘。如果给executor分配更多内存，减少了磁盘IO，提升了性能。
-3、对于task的执行，会创建很多对象。如果内存比较小，可能会频繁导致JVM堆内存满了，然后频繁GC，垃圾回收，minor GC和full GC。（速度很慢）。内存加大以后，带来更少的GC，垃圾回收，避免了速度变慢，速度变快了。
-**但是不超过分配各每个worker的内存**
+* executor-cores：增加每个executor的cpu core，增加了执行的并行能力
 
-* num-executors （增加executor个数)
-如果executor数量比较少，那么，能够并行执行的task数量就比较少，就意味着，我们的Application的并行执行的能力就很弱。
-比如有3个executor，每个executor有2个cpu core，那么同时能够并行执行的task，就是6个。6个执行完以后，再换下一批6个task。
+    原本20个executor，各有2个cpu core。能够并行40个task。
+    现在每个executor的cpu core，增加到了5个。就能够并行执行100个task。
+    执行的速度，提升了2.5倍。
+    **但不超过服务器的cpu core数，不然会waiting**。
 
-问题：
-1. 对spark的架构居然都不太熟悉，一个Master，多个Worker；一个Driver，多个Executor。
+* executor-memory：增加每个executor的内存量
+
+    增加了内存量以后，对性能的提升有以下几点，**但是不超过分配各每个worker的内存**：
+    1. 如果需要对RDD进行cache，可以缓存更多的数据，将更少的数据写入磁盘。
+    2. 对于shuffle操作减少了磁盘IO，reduce端需要内存来存放拉取的数据并进行聚合。如果内存不够，会写入磁盘。
+    3. 对于task的执行，会创建很多对象。如果内存比较小，可能会频繁导致JVM堆内存满了，然后频繁GC，垃圾回收，minor GC和full GC。速度变慢。
 
 
 ## 1.2 调节并行度
 
-并行度：Spark作业中会拆成多个stage，各个stage的task数量，也就代表了job在各个阶段（stage）的并行度。（job划分成stage是根据宽窄依赖来区分的）
+并行度：Spark作业中根据宽窄依赖拆成多个stage，各个stage的task数量，也就代表了job在各个阶段（stage）的并行度。
 **spark自己的算法给task选择Executor，Execuotr进程里面包含着task线程**。
 举例（wordCount）：
     map阶段：每个task根据去找到自己需要的数据写到文件去处理。生成的文件一定是存放相同的key对应的values，相同key的values一定是进入同一个文件。
     reduce阶段：每个stage1的task，会去上面生成的文件拉取数据；拉取到的数据，一定是相同key对应的数据。对相同的key，对应的values，才能去执行我们自定义的function操作（_ + _）
 
-
 假设资源调到上限了，如果不调节并行度，导致并行度过低，会怎么样？
 
 假设task设置了100个task。有50个executor，每个executor有3个cpu core。
-则Application任何一个stage运行的时候，都有总数在150个cpu core，可以并行运行。
-但是共有100个task，平均分配一下，每个executor分配到2个task。
-那么同时在运行的task，只有100个，每个executor只会并行运行2个task。每个executor剩下的一个cpu core，并行度没有与资源相匹配，就浪费掉了。
+则Application任何一个stage运行的时候，都有总数在150个cpu core，可以并行运行。同时在运行的task只有100个。每个executor剩下的一个cpu core，并行度没有与资源相匹配，就浪费掉了。
 
 合理的并行度的设置，应该要设置到可以完全合理的利用你的集群资源；
 比如上面的例子，总共集群有150个cpu core，可以并行运行150个task。
@@ -99,26 +101,20 @@ executor-cores = 2，对应每个worker给每个executor能用的最多个cpu co
 SparkConf conf = new SparkConf()
   .set("spark.default.parallelism", "500")
 
-“重剑无锋”：真正有分量的一些技术和点，其实都是看起来比较平凡，看起来没有那么“炫酷”，但是其实是你每次写完一个spark作业，进入性能调优阶段的时候，应该优先调节的事情，就是这些。
-
 
 ## 1.3 重构RDD架构以及RDD持久化
 
-第一，RDD架构重构与优化
-尽量去复用RDD，差不多的RDD抽取为一个共同的RDD，供后面的RDD计算时，反复使用。
-第二，公共RDD一定要实现持久化
-持久化，也就是说，将RDD的数据缓存到内存中/磁盘中，（BlockManager），以后无论对这个RDD做多少次计算，那么都是直接取这个RDD的持久化的数据，比如从内存中或者磁盘中，直接提取一份数据。
+1. RDD架构重构与优化：尽量复用RDD，差不多的RDD抽取为一个共同的RDD，供后面的RDD计算时，反复使用。
+2. 公共RDD一定要实现持久化，将RDD的数据缓存到内存中/磁盘中，（BlockManager），以后无论对这个RDD做多少次计算，那么都是直接取这个RDD的同一份数据。
+3. 持久化是可以进行序列化的，如果正常将数据持久化在内存中，可能会导致内存的占用过大，导致OOM。
 
-第三，持久化是可以进行序列化的
-如果正常将数据持久化在内存中，可能会导致内存的占用过大，导致OOM。
-
-当纯内存无法支撑公共RDD数据完全存放的时候，就优先考虑，使用序列化的方式在纯内存中存储。将RDD的每个partition的数据，序列化成一个大的字节数组，就一个对象；序列化后，大大减少内存的空间占用。
+当纯内存无法支撑公共RDD数据完全存放的时候，就优先考虑，使用序列化的方式在纯内存中存储。
 序列化的方式，唯一的缺点就是，在获取数据的时候，需要反序列化。
 
 如果序列化纯内存方式，还是导致OOM，内存溢出；就只能考虑磁盘的方式，内存+磁盘的普通方式（无序列化）。
 内存+磁盘，序列化
 
-第四，为了数据的高可靠性，而且内存充足，可以使用双副本机制，进行持久化
+4. 为了数据的高可靠性，而且内存充足，可以使用双副本机制，进行持久化
 持久化的双副本机制，持久化后的一个副本，因为机器宕机了，副本丢了，就还是得重新计算一次；持久化的每个数据单元，存储一份副本，放在其他节点上面；从而进行容错；一个副本丢了，不用重新计算，还可以使用另外一份副本。这种方式，仅仅针对你的内存资源极度充足。
 
 
@@ -181,9 +177,13 @@ fastutil的使用，在pom.xml中引用fastutil的包
 
 调节数据本地化等待时长
 
-背景：Driver对Application的每一个stage的task，进行分配之前，都会计算出每个task要计算的是哪个分片数据，RDD的某个partition。分配算法会希望每个task正好分配到它要计算的数据所在的节点。
-但是可能某task要分配过去的那个节点的计算资源和计算能力都满了。**这种时候，Spark会等待一段时间**，默认情况下是3s，**到最后实在是等待不了了，就会选择一个比较差的本地化级别**，将task分配到靠它要计算的数据所在节点，比较近的一个节点，然后进行计算。
-task会通过其所在节点的BlockManager来获取数据，BlockManager发现自己本地没有数据，会通过一个getRemote()方法，通过TransferService（网络数据传输组件）从数据所在节点的BlockManager中，获取数据，通过网络传输回task所在节点。
+背景：Driver对Application的每一个stage的task，进行分配之前，都会计算出每个task要计算的是哪个分片数据，RDD的某个partition。
+分配算法会希望每个task正好分配到它要计算的数据所在的节点。
+但是可能某task要分配过去的那个节点的计算资源和计算能力都满了，Spark会等待一段时间，默认情况下是3s。
+超过时间了会选择一个比较差的本地化级别，将task分配到靠它要计算的数据所在节点，比较近的一个节点，然后进行计算。
+
+task会通过其所在节点的BlockManager来获取数据，BlockManager发现自己本地没有数据，
+会通过一个getRemote()方法，通过TransferService（网络数据传输组件）从数据所在节点的BlockManager中，获取数据，通过网络传输回task所在节点。
 
 我们调节等待时长就是让spark再等待多一下，不要到低一级的本地化级别。
 
@@ -202,7 +202,8 @@ new SparkConf()
 观察日志，spark作业的运行日志显示，观察大部分task的数据本地化级别。starting task。PROCESS LOCAL、NODE LOCAL。
 如果大多都是PROCESS_LOCAL，那就不用调节了。
 如果是发现，好多的级别都是NODE_LOCAL、ANY，那么最好就去调节一下数据本地化的等待时长。
-看看大部分的task的本地化级别有没有提升；看看，整个spark作业的运行时间有没有缩短。如果spark作业的运行时间反而增加了，那就还是不要调节了。
+看看大部分的task的本地化级别有没有提升，spark作业的运行时间有没有缩短。
+如果spark作业的运行时间反而增加了，那就还是不要调节了。
 
 **本地化级别**
 * PROCESS_LOCAL：进程本地化，代码和数据在同一个进程中，也就是在同一个executor中；计算数据的task由executor执行，数据在executor的BlockManager中；性能最好
@@ -212,18 +213,26 @@ new SparkConf()
 * ANY：数据和task可能在集群中的任何地方，而且不在一个机架中，性能最差
 
 
-
 ## 1.5 JVM调优
 
 ### 首先估计GC的影响
 
 GC调优的第一步就是去统计GC发生的频率和GC消耗时间。
-通过添加[Java配置](http://spark.apache.org/docs/latest/configuration.html#Dynamically-Loading-Spark-Properties)：```-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps```
+通过添加：
+```
+-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps
+```
+或者
+```
+./bin/spark-submit --name "My app" --master local[4] --conf spark.eventLog.enabled=false
+  --conf "spark.executor.extraJavaOptions=-XX:+PrintGCDetails -XX:+PrintGCTimeStamps" myApp.jar
+```
 在作业运行的时候能够看到worker的日志里面在每次GC的时候就打印出GC信息。
+
 
 ### 了解GC相关原理
 了解更多GC调优方法前我们需要了解JVM内存管理：
-* Java Heap space 被分成 Young 和 Old 两个regions。Young generation 顾名思义保存短期使用的对象，而 Old generation 用于保存有更长使用周期的对象。
+* Java堆空间被分成 Young 和 Old 两个regions。Young generation 顾名思义保存短期使用的对象，而 Old generation 用于保存有更长使用周期的对象。
 * Young generation 被细分成三个regions：[Eden, Survivor1, Survivor2]。
 * 简述GC：当 Eden 空间满了, Eden 会进行一次较小的minor GC，依然存活的对象会从Eden and Survivor1 复制到 Survivor2。当Survivor2的对象 object 足够老或者 Survivor2 空间满了, 对象就会被移到 Old。最后当 Old 空间也接近使用完，就会发生full GC。
 
@@ -235,8 +244,10 @@ GC调优的目标是保证只有长期存活的RDD被存储在Old generation，Y
 
 * minor gc后会将存活下来的对象，放入之前空闲的那一个survivor区域中。
 这里可能会出现一个问题。默认eden、survior1和survivor2的内存占比是8:1:1。如果存活下来的对象是1.5，一个survivor区域放不下。
-就可能通过JVM的担保机制，将多余的对象，直接放入老年代了。导致老年代囤积一大堆短生命周期的原本需要快点回收的对象。
-导致full gc。由于考虑老年代中的对象数量很少，满溢进行full gc的频率应该很少，因此采取了不太复杂，但是耗费性能和时间的垃圾回收算法。
+就可能通过JVM的担保机制，将多余的对象，直接放入老年代了。
+导致老年代囤积一大堆短生命周期的原本需要快点回收的对象。
+导致full gc。
+由于考虑老年代中的对象数量很少，满溢进行full gc的频率应该很少，因此采取了不太复杂，但是耗费性能和时间的垃圾回收算法。
 
 * 如果OldGen将要完全占满，可以减少spark.memory.fraction。另外可以考虑减少Young generation的大小通过调低 -Xmn。
 否则，尝试改变JVM的NewRatio参数，一般JVM默认设置是2，含义是Old generation占用了 2/3的 heap内存。应该设置得足够大超过并超过spark.memory.fraction。
@@ -246,8 +257,10 @@ GC调优的目标是保证只有长期存活的RDD被存储在Old generation，Y
 
 * 如果作业从HDFS中读取数据，可以通过作业使用的block大小推测使用的内存大小，读取出来的block通常是存储大小的2-3倍，所以如果我们希望有4个作业去使用一个HDFS的128MB的block，我们预估Eden需要4*3*128MB。
 
-降低cache操作的内存占比，大不了用persist操作，选择将一部分缓存的RDD数据写入磁盘，或者序列化方式，配合Kryo序列化类，减少RDD缓存的内存占用；降低cache操作内存占比；对应的，算子函数的内存占比就提升了。
+降低cache操作的内存占比，大不了用persist操作，选择将一部分缓存的RDD数据写入磁盘，
+或者序列化方式，配合Kryo序列化类，减少RDD缓存的内存占用；降低cache操作内存占比；对应的，算子函数的内存占比就提升了。
 一句话，让task执行算子函数时，有更多的内存可以使用。
+
 spark-submit脚本里面，去用--conf的方式，去添加配置：
 ```
 --conf spark.memory.fraction，0.6 -> 0.5 -> 0.4 -> 0.2
@@ -293,10 +306,9 @@ spark默认的网络连接的超时时长，是60s；
 ### 1.6.1 shuffle流程
 shuffle，一定是分为两个stage来完成的。因为这其实是个逆向的过程，不是stage决定shuffle，是shuffle决定stage。
 在某个action触发job的时候，DAGScheduler会负责划分job为多个stage。划分的依据，就是如果发现有会触发shuffle操作的算子（reduceByKey）。
-就将这个操作的前半部分，以及之前所有的RDD和transformation操作，划分为一个stage；
-shuffle操作的后半部分，以及后面的，直到action为止的RDD和transformation操作，划分为另外一个stage。
 
-每一个shuffle的前半部分stage的task，**每个task**都会**创建下一个stage的task数量相同的文件**，比如下一个stage会有10个task，那么当前stage每个task都会创建10份文件；会将同一个key对应的values，写入同一个文件中的；
+每一个shuffle的前半部分stage的task，**每个task**都会**创建下一个stage的task数量相同的文件**，比如下一个stage会有10个task，那么当前stage每个task都会创建10份文件；
+会将同一个key对应的values，写入同一个文件中的；
 不同节点上的task，也一定会将同一个key对应的values，写入下一个stage的同一个task对应的文件中。
 
 shuffle的后半部分stage的task，每个task都会从各个节点上的task写的属于自己的那一份文件中，拉取key, value对；
@@ -304,9 +316,10 @@ shuffle的后半部分stage的task，每个task都会从各个节点上的task�
 task会用我们自己定义的聚合函数reduceByKey(_+_)，把所有values进行一对一的累加；聚合出来最终的值。
 
 
-### 1.6.2 合并map端输出文件
+### 1.6.2 合并map端输出文件（优化的hashShuffle)
 
-```sparConf().set("spark.shuffle.consolidateFiles", "true")
+```
+sparConf().set("spark.shuffle.consolidateFiles", "true")
 ```
 
 开启了map端输出文件的合并机制之后：
@@ -326,7 +339,9 @@ shuffle的map task：
 
 shuffle的reduce端task：
 在拉取到数据之后，会用hashmap的数据格式，来对各个key对应的values进行汇聚的时候。
-使用的就是自己对应的executor的内存，executor（jvm进程，堆），默认executor内存中划分给reduce task进行聚合的比例，是0.2。要是拉取过来的数据很多，那么在内存中，放不下；就将在内存放不下的数据，都spill（溢写）到磁盘文件中去。数据大的时候磁盘上溢写的数据量越大，后面在进行聚合操作的时候，很可能会多次读取磁盘中的数据，进行聚合。
+使用的就是自己对应的executor的内存，executor（jvm进程，堆），默认executor内存中划分给reduce task进行聚合的比例，是0.2。
+要是拉取过来的数据很多，那么在内存中，放不下；就将在内存放不下的数据，都spill（溢写）到磁盘文件中去。
+数据大的时候磁盘上溢写的数据量越大，后面在进行聚合操作的时候，很可能会多次读取磁盘中的数据，进行聚合。
 
 **怎么调节？**
 看Spark UI，shuffle的磁盘读写的数据量很大，就意味着最好调节一些shuffle的参数。进行调优。
@@ -340,7 +355,7 @@ set(spark.shuffle.memoryFraction，0.2)  // 每次提高0.1，看看效果。
 
 ### 1.6.4 HashShuffleManager与SortShuffleManager
 
-**上面我们所讲shuffle原理是指HashShuffleManager**，其实是一种比较老旧的shuffle manager，从spark 1.2.x版本以后，默认的是SortShuffleManager。
+**上面我们所讲shuffle原理是指HashShuffleManager**，是很过时的shuffle manager，从spark 1.2.x版本以后，默认的是SortShuffleManager。
 之前讲解的一些调优的点，比如consolidateFiles机制、map端缓冲、reduce端内存占比。这些对任何shuffle manager都是有用的。
 
 在spark 1.5.x后，又出来了一种tungsten-sort shuffleMnager。效果跟sort shuffle manager是差不多的。
@@ -379,7 +394,7 @@ new SparkConf().set("spark.shuffle.sort.bypassMergeThreshold", "550")   // 默�
 ### 1.7.1 MapPartitions提升Map类操作性能
 普通的mapToPair，当一个partition中有1万条数据，function要执行和计算1万次。
 但是，使用MapPartitions操作之后，一个task仅仅会执行一次function，function一次接收所有的partition数据。只要执行一次就可以了，性能比较高。
-但是MapPartitions操作，对于大量数据来说，一次传入一个function以后，那么可能一下子内存不够，但是又没有办法去腾出内存空间来，可能就OOM。
+但是MapPartitions操作，对于大量数据来说，一次传入一个function以后，可能一下子内存不够而且又没法腾出内存空间的话，可能就OOM。
 
 在项目中，自己先去估算一下RDD的数据量，以及每个partition的量，还有自己分配给每个executor的内存资源。看看一下子内存容纳所有的partition数据，行不行。如果行，可以试一下，能跑通就好。性能肯定是有提升的。
 
@@ -391,11 +406,16 @@ RDD这种filter之后，RDD中的每个partition的数据量，可能都不太�
 
 针对上述的两个问题，能够怎么解决呢？
 
-1、针对第一个问题，希望可以进行partition的压缩吧，因为数据量变少了，那么partition其实也完全可以对应的变少。比如原来是4个partition，现在完全可以变成2个partition。那么就只要用后面的2个task来处理即可。就不会造成task计算资源的浪费。
+1、针对第一个问题，希望可以进行partition的压缩吧，因为数据量变少了，那么partition其实也完全可以对应的变少。
+比如原来是4个partition，现在完全可以变成2个partition。
+那么就只要用后面的2个task来处理即可。就不会造成task计算资源的浪费。
 
-2、针对第二个问题，其实解决方案跟第一个问题是一样的；也是去压缩partition，尽量让每个partition的数据量差不多。那么这样的话，后面的task分配到的partition的数据量也就差不多。不会造成有的task运行速度特别慢，有的task运行速度特别快。避免了数据倾斜的问题。
+2、针对第二个问题，其实解决方案跟第一个问题是一样的；也是去压缩partition，尽量让每个partition的数据量差不多。
+那么这样的话，后面的task分配到的partition的数据量也就差不多。
+不会造成有的task运行速度特别慢，有的task运行速度特别快。避免了数据倾斜的问题。
 
-主要就是用于在filter操作之后，添加coalesce算子，针对每个partition的数据量各不相同的情况，来压缩partition的数量。减少partition的数量，而且让每个partition的数据量都尽量均匀紧凑。
+主要就是用于在filter操作之后，添加coalesce算子，针对每个partition的数据量各不相同的情况，来压缩partition的数量。
+减少partition的数量，而且让每个partition的数据量都尽量均匀紧凑。
 
 
 ### 1.7.3 foreachPartition优化写数据库性能
@@ -423,6 +443,17 @@ Spark SQL自己会默认根据hive表对应的hdfs文件的block，自动设置S
 
 repartition算子，可以将你用Spark SQL查询出来的RDD，使用repartition算子时，去重新进行分区，此时可以分区成多个partition，比如从20个partition分区成100个。
 就可以避免跟Spark SQL绑定在一个stage中的算子，只能使用少量的task去处理大量数据以及复杂的算法逻辑。
+
+
+repartition方法其实就是调用了coalesce方法,shuffle为true的情况(默认shuffle是fasle)。
+现在假设RDD有X个分区,需要重新划分成Y个分区。
+1.如果x<y,说明x个分区里有数据分布不均匀的情况,利用HashPartitioner把x个分区重新划分成了y个分区,此时,需要把shuffle设置成true才行,因为如果设置成false,不会进行shuffle操作,此时父RDD和子RDD之间是窄依赖,这时并不会增加RDD的分区.
+
+2.如果x>y,需要先把x分区中的某些个分区合并成一个新的分区,然后最终合并成y个分区,此时,需要把coalesce方法的shuffle设置成false.
+
+总结:如果想要增加分区的时候,可以用repartition或者coalesce,true都行,但是一定要有shuffle操作,分区数量才会增加,为了让该函数并行执行，通常把shuffle的值设置成true。
+
+
 
 ### 1.7.5 reduceByKey本地聚合介绍
 reduceByKey，相较于普通的shuffle操作（比如groupByKey），它有一个特点：会进行map端的本地聚合。
