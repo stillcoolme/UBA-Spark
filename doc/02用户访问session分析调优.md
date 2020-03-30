@@ -18,7 +18,9 @@ Master: Driver
 * BlockManager负责Executor，task的数据管理，task来它这里拿数据；
 
 
+
 ## 1.1 资源分配
+
 性能调优的王道：分配更多资源。
 * 分配哪些资源？ executor、cpu per executor、memory per executor、driver memory
 * 在哪里分配这些资源？
@@ -158,6 +160,7 @@ Spark中应用fastutil的场景：
 
 fastutil的使用，在pom.xml中引用fastutil的包
 ```List<Integer> => IntList
+
 ```
 基本都是类似于IntList的格式，前缀就是集合的元素类型；特殊的就是Map，Int2IntMap，代表了key-value映射的元素类型。
 
@@ -223,19 +226,10 @@ myApp.jar
    ```
 * 启动Spark应用程序
 * 打开jvisualvm.exe监控
-    在JDK安装的bin目录下有个jvisualvm.exe，双击它，然后进行配置，依次选择 文件-> 添加JMX连接，在连接文本框填上Driver机器的地址和端口
+    在JDK安装的bin目录下有个jvisualvm.exe，进行配置，依次选择 文件-> 添加JMX连接，在连接文本框填上Driver机器的地址和端口
 
 
 ### 了解GC相关原理
-了解更多GC调优方法前我们需要了解JVM内存管理：
-* Java堆空间被分成 Young 和 Old 两个regions。Young generation 顾名思义保存短期使用的对象，而 Old generation 用于保存有更长使用周期的对象。
-* Young generation 被细分成三个regions：[Eden, Survivor1, Survivor2]。
-* 简述GC：
-    1. 当 Eden 空间满了, Eden 会进行一次较小的minor GC，依然存活的对象会从Eden and Survivor1 复制到 Survivor2。
-    2. 当Survivor2的 Object 足够老或者 Survivor2 空间满了, 对象就会被移到 Old。最后当 Old 空间也接近使用完，就会发生full GC。
-    3. Eden的内存太小会频繁的进行minor gc，导致有些短生命周期对象在没有被回收掉，年龄变大放到老年代了，导致full gc。
-minor gc后会将存活下来的对象，放入之前空闲的那一个survivor区域中。默认eden、survior1和survivor2的内存占比是8:1:1。如果存活下来的对象是1.5，一个survivor区域放不下。
-
 * GC调优的目标
     1. 保证在Old generation只存储有长期存活的RDD；
     2. Young generation有足够的空间存储短期的对象，**避免full GC将作业执行时创建的短期的对象也回收掉**。
@@ -243,10 +237,10 @@ minor gc后会将存活下来的对象，放入之前空闲的那一个survivor�
 
 * GC调优做法：
     1. 通过收集GC状态检查是否有大量的垃圾回收，如果在作业完成前有多次 full GC，意味着没有足够的内存给执行的task。
-    2. 如果进行了多次 minorGC，分配更多的内存给Eden也许会有帮助。只要将Eden的内存E设置成大于每个task需要的内存大小，Young generation 则设置成 -Xmn=4/3*E。
+    2. 如果进行了多次 minorGC，分配更多的内存给Eden也许会有帮助。只要将Eden的内存E设置成大于每个task需要的内存大小，Young generation 则设置成 -Xmn=4 / 3 * E。
     3. 如果OldGen将要完全占满，可以减少spark.memory.fraction。改变JVM的NewRatio参数，默认设置是2，表示Old generation占用了 2/3的 heap内存，应该设置得足够大超过并超过spark.memory.fraction。另外可以考虑减少Young generation的大小通过调低 -Xmn。
     4. 尝试使用G1GC 收集器 通过配置 -XX:+UseG1GC 。如果executor需要大的堆内存，那么通过配置-XX:G1HeapRegionSize来提高G1 region size 是很重要的。
-    5. 如果作业从HDFS中读取数据，可通过作业使用的block大小推测使用的内存大小，读取出来的block通常是存储大小的2-3倍。如果有4个作业去使用一个HDFS的128MB的block，我们预估Eden需要4*3*128MB。
+    5. 如果作业从HDFS中读取数据，可通过作业使用的block大小推测使用的内存大小，读取出来的block通常是存储大小的2-3倍。如果有4个作业去使用一个HDFS的128MB的block，我们预估Eden需要4 * 3 * 128MB。
 
 spark-submit脚本里面，去用--conf的方式，去添加配置：
 ```
@@ -255,11 +249,13 @@ spark-submit脚本里面，去用--conf的方式，去添加配置：
 ```
 
 
+
 ### 调节executor堆外内存
 
-有时候，如果你的spark作业处理的数据量特别特别大；
-然后spark作业一运行，时不时的报错，shuffle file cannot find，executor、task lost，out of memory（内存溢出）；
+有时候，如果你的spark作业处理的数据量特别特别大；然后spark作业一运行，时不时的报错，shuffle file cannot find，executor、task lost，out of memory（内存溢出）；
+
 可能是说executor的堆外内存不太够用，导致executor在运行的过程中会内存溢出；
+
 然后导致后续的stage的task在运行的时候，可能要从一些executor中去拉取shuffle map output文件，但是executor可能已经挂掉了，关联的Block manager也没有了；spark作业彻底崩溃。
 
 上述情况下，就可以去考虑调节一下executor的堆外内存。避免掉某些JVM OOM的异常问题。
@@ -276,7 +272,7 @@ spark-submit脚本里面，去用--conf的方式，去添加基于yarn的提交�
 
 我们知道 Executor，优先从自己本地关联的BlockManager中获取某份数据。
 如果本地block manager没有的话，那么会通过TransferService，去远程连接其他节点上executor的block manager去获取。
-正好碰到那个exeuctor的JVM在垃圾回收，就会没有响应，无法建立网络连接；
+正好碰到那个 exeuctor 的 JVM 在垃圾回收，就会没有响应，无法建立网络连接；
 spark默认的网络连接的超时时长，是60s；
 就会出现某某file。一串file id。uuid（dsfsfd-2342vs--sdf--sdfsd）。not found。file lost。
 报错几次，几次都拉取不到数据的话，可能会导致spark作业的崩溃。也可能会导致DAGScheduler，反复提交几次stage。TaskScheduler，反复提交几次task。大大延长我们的spark作业的运行时间。
@@ -285,6 +281,8 @@ spark默认的网络连接的超时时长，是60s；
 ```
 --conf spark.core.connection.ack.wait.timeout=300
 ```
+
+
 
 ## OOM相关
 
@@ -303,6 +301,7 @@ Spark中的OOM问题不外乎两种情况：
 这个操作在rdd每个对象都产生了10000个对象，这肯定很容易产生内存溢出的问题。
 针对这种问题，**在不增加内存的情况下，可以通过减少每个Task的大小，让Executor的内存也能够装得下。**
 具体做法可以在会产生大量对象的map操作之前调用repartition方法，分区成更小的块传入map。
+
 ```
 例如：rdd.repartition(10000).map(x=>for(i <- 1 to 10000) yield i.toString)。
 ```
@@ -325,11 +324,7 @@ Spark中的OOM问题不外乎两种情况：
 
 * shuffle后内存溢出：
 
-shuffle内存溢出的情况可以说都是shuffle后，单个文件过大导致的。
-在Spark中，join，reduceByKey这一类型的过程，都会有shuffle的过程，在shuffle的使用，需要传入一个partitioner，
-默认的partitioner都是HashPatitioner，默认值是父RDD中最大的分区数,这个参数通过spark.default.parallelism控制(在spark-sql中用spark.sql.shuffle.partitions) ，
-spark.default.parallelism参数只对HashPartitioner有效，所以如果是别的Partitioner或者自己实现的Partitioner就不能使用spark.default.parallelism这个参数来控制shuffle的并发量了。
-如果是别的partitioner导致的shuffle内存溢出，就需要从partitioner的代码增加partitions的数量。
+shuffle内存溢出的情况可以说都是shuffle后，单个文件过大导致的。在shuffle的使用，需要传入一个partitioner，默认的partitioner都是HashPatitioner，默认值是父RDD中最大的分区数，这个参数通过spark.default.parallelism控制 (只对HashPartitioner有效，在spark-sql中用spark.sql.shuffle.partitions) 。如果是别的partitioner导致的shuffle内存溢出，就需要从partitioner的代码增加partitions的数量。
 
 
 
@@ -381,6 +376,7 @@ shuffle的reduce端task：
 
 **怎么调节？**
 看Spark UI，shuffle的磁盘读写的数据量很大，就意味着最好调节一些shuffle的参数。进行调优。
+
 ```
 set(spark.shuffle.file.buffer，64)      // 默认32k  每次扩大一倍，看看效果。
 set(spark.shuffle.memoryFraction，0.2)  // 每次提高0.1，看看效果。
@@ -446,8 +442,7 @@ RDD强调的是不可变对象，每个RDD都是不可变的，当调用RDD的ma
 
 DataFrame则不同，DataFrame由于有类型信息所以是可变的，并且在可以使用sql的程序中，都有除了解释器外，都会有一个sql优化器Catalyst，
 
-上面说到的这些RDD的弊端，有一部分就可以使用mapPartitions进行优化，
-mapPartitions可以同时替代rdd.map,rdd.filter,rdd.flatMap的作用，
+上面说到的这些RDD的弊端，有一部分就可以使用mapPartitions进行优化，mapPartitions可以同时替代rdd.map, rdd.filter, rdd.flatMap的作用，
 所以在长操作中，可以在mapPartitons中将RDD大量的操作写在一起，避免产生大量的中间rdd对象，
 另外是mapPartitions在一个partition中可以复用可变类型，这也能够避免频繁的创建新对象。
 
@@ -461,9 +456,8 @@ mapPartitions可以同时替代rdd.map,rdd.filter,rdd.flatMap的作用，
 
 ### 1.7.2 使用coalesce减少分区数量
 
-repartition  是 coalesce
+从源码中可以看出repartition方法其实就是调用了coalesce方法，shuffle为 true 的情况. 现在假设 RDD 有X个分区,需要重新划分成Y个分区.
 
-从源码中可以看出repartition方法其实就是调用了coalesce方法，shuffle为true的情况. 现在假设RDD有X个分区,需要重新划分成Y个分区.
 1.如果x<y,说明x个分区里有数据分布不均匀的情况,利用HashPartitioner把x个分区重新划分成了y个分区,此时,需要把shuffle设置成true才行,因为如果设置成false,不会进行shuffle操作,此时父RDD和子RDD之间是窄依赖,这时并不会增加RDD的分区.
 
 2.如果x>y,需要先把x分区中的某些个分区合并成一个新的分区,然后最终合并成y个分区,此时,需要把coalesce方法的shuffle设置成false.
@@ -552,7 +546,7 @@ spark.reducer.maxSizeInFlight
 
 
 ### 1.8.2 解决JVM GC导致的shuffle文件拉取失败
-比如，executor的JVM进程，内存不够了，发生GC，导致BlockManger,netty通信都停了。
+比如，executor的JVM进程，内存不够了，发生GC，导致BlockManger，netty通信都停了。
 下一个stage的executor，可能是还没有停止掉的，task想要去上一个stage的task所在的exeuctor，去拉取属于自己的数据，结果由于对方正在GC，就导致拉取了半天没有拉取到。
 可能会报错shuffle file not found。
 但是，可能下一个stage又重新提交了stage或task以后，再执行就没有问题了，因为可能第二次就没有碰到JVM在gc了。
@@ -589,23 +583,35 @@ spark-submit脚本中，加入以下配置即可：
 
 
 
-## 1.9 数据倾斜条调优
+## 1.9 数据倾斜调优
+
+有key倾斜了，再怎么repartition也没用啊?
+
+可以的，只要你机器无限多，给他reptition的无限小
+我只会一招就是repartiton，谁oom都给谁repartition，repartition不行就count然后filter
+repartition不行就count然后filter啊，读信息不要读一半啊
+如果repartition不管用就是严重数据倾斜，那么首先count找到引发倾斜的key，然后看到底是什么原因引起的，然后单独处理
+repartition够用就是资源不够，又不可能加资源，那就慢点跑呗
+如果对计算指标没影响直接过滤掉
+有影响该干啥干啥，网上搜一下很全了
+
+业务其实更多的是非法值，加key打散也是浪费资源，非法值就是裹一层Option，模式匹配一把梭
 
 ### 1.9.1 数据倾斜的原理、现象、产生原因与定位
 **原因**
-在执行shuffle操作的时候，是按照key，来进行values的数据的输出、拉取和聚合的。
-同一个key的values，一定是分配到一个reduce task进行处理的。
-假如多个key对应的values，总共是90万。
-可能某个key对应了88万数据，分配到一个task上去面去执行，执行很慢。而另外两个task，可能各几十个key分配到了1万数据，出现数据倾斜。
+shuffle操作是按照key，来进行values的数据的输出、拉取和聚合的。所以**同一个key的values，一定是分配到一个reduce task进行处理的**。当其中一个key的数据量很大就会发生数据倾斜。
+
 定位：在自己的程序里面找找，哪些地方用了会产生shuffle的算子，groupByKey、countByKey、reduceByKey、join。
-看log，看看是执行到了第几个stage。
-哪一个stage，task特别慢或者只有一部分task在工作，就能够从spark代码的stage划分，通过stage定位到你的代码，哪里发生了数据倾斜。
+看log，看看是执行到了第几个stage。哪一个stage，task特别慢或者只有一部分task在工作，就能够从spark代码的stage划分，通过stage定位到你的代码，哪里发生了数据倾斜。
+
+
 
 **第一个方案：聚合源数据**
 做一些聚合的操作：groupByKey、reduceByKey，说白了就是对每个key对应的values执行一定的计算。
 
 spark作业的数据来源如果是hive，可以直接在生成hive表的hive etl中，对数据进行聚合。
 比如按key来分组，将key对应的所有的values，全部用一种特殊的格式，拼接到一个字符串里面去，每个key就只对应一条数据。比如
+
 ```
 key=sessionid, value: action_seq=1|user_id=1|search_keyword=火锅|category_id=001;action_seq=2|user_id=1|search_keyword=涮肉|category_id=001”。
 
@@ -683,7 +689,7 @@ RDD有一个或少数几个key，是对应的数据量特别多；
 此时可以采用咱们的这种方案，单拉出来那个最多的key；
 单独进行join，尽可能地将key分散到各个task上去进行join操作。
 
-### 1.9.5 使用随机数以及扩容表进行join
+### 1.9.5  使用随机数以及扩容表进行join
 这个方案是没办法彻底解决数据倾斜的，更多的，是一种对数据倾斜的缓解。
 局限性：
 1、因为join两个RDD都很大，就没有办法去将某一个RDD扩的特别大，一般是10倍。
@@ -695,10 +701,19 @@ RDD有一个或少数几个key，是对应的数据量特别多；
 3、最后，将两个处理后的RDD，进行join操作。
 4、join完以后，可以执行map操作，去将之前打上的随机数给去掉，然后再和另外一个普通RDD join以后的结果，进行union操作。
 
-
 sample采样倾斜key并单独进行join
 将key，从另外一个RDD中过滤出的数据，可能只有一条，或者几条，此时，咱们可以任意进行扩容，扩成1000倍。
 将从第一个RDD中拆分出来的那个倾斜key RDD，打上1000以内的一个随机数。
 打散成100份，甚至1000份去进行join，那么就肯定没有数据倾斜的问题了吧。
 这种情况下，还可以配合上，提升shuffle reduce并行度，join(rdd, 1000)。
+
+
+
+
+
+
+
+
+
+
 

@@ -26,7 +26,7 @@ object UserActiveDegreeAnalyze {
         .builder()
         .appName("UserActiveDegreeAnalyze")
         .master("local") 
-        .config("spark.sql.warehouse.dir", "C:\\Users\\Administrator\\Desktop\\spark-warehouse")
+        .config("spark.sql.warehouse.dir", this.getClass.getResource("/") + "spark-warehouse")
         .getOrCreate()
         
     // 导入spark的隐式转换
@@ -35,8 +35,8 @@ object UserActiveDegreeAnalyze {
     import org.apache.spark.sql.functions._
     
     // 获取两份数据集
-    val userBaseInfo = spark.read.json("C:\\Users\\Administrator\\Desktop\\user_base_info.json")
-    val userActionLog = spark.read.json("C:\\Users\\Administrator\\Desktop\\user_action_log.json")
+    val userBaseInfo = spark.read.json(this.getClass.getResource("/") + "data/user_base_info.json")
+    val userActionLog = spark.read.json(this.getClass.getResource("/") + "data/user_action_log.json")
   
     // 第一个功能：统计指定时间范围内的访问次数最多的10个用户
     // 说明：课程，所以数据不会搞的太多，但是一般来说，pm产品经理，都会抽取100个~1000个用户，供他们仔细分析
